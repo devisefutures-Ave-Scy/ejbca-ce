@@ -22,6 +22,7 @@ import java.math.BigInteger;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
@@ -40,11 +41,11 @@ import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.security.spec.AlgorithmParameterSpec;
 import java.security.spec.ECGenParameterSpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Collections;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
-
 import javax.crypto.KeyGenerator;
 
 import org.apache.commons.lang.StringUtils;
@@ -59,6 +60,8 @@ import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.jcajce.provider.asymmetric.util.ECUtil;
 import org.bouncycastle.jcajce.spec.EdDSAParameterSpec;
 import org.bouncycastle.jce.ECKeyUtil;
+import org.bouncycastle.jce.ECNamedCurveTable;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.BufferingContentSigner;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.ContentVerifierProvider;
@@ -75,6 +78,7 @@ import org.cesecore.keys.token.CachingKeyStoreWrapper;
 import org.cesecore.keys.token.KeyGenParams;
 import org.cesecore.keys.token.p11.PKCS11Utils;
 import org.cesecore.util.CertTools;
+import org.pkcs11.jacknji11.*;
 
 /**
  * @version $Id$
@@ -321,14 +325,169 @@ public class KeyStoreTools {
         }
     }
 
+    /**
+     * Generates a public-key / private-key Ed25519 pair, create new key objects.
+     * 
+     * @param session    the session's handle
+     * @param publicKey  gets handle of new public key
+     * @param privateKey gets handle of new private key
+     */
+    public void generateKeyPairEd25519(long session, LongRef publicKey, LongRef privateKey, String keyalias) {
+        // Attributes from PKCS #11 Cryptographic Token Interface Current Mechanisms
+        // Specification Version 2.40 section 2.3.3 - ECDSA public key objects
+        /*
+            * DER-encoding of an ANSI X9.62 Parameters, also known as
+            * "EC domain parameters".
+            */
+        // We use a Ed25519 key, the oid 1.3.101.112 has DER encoding in Hex 06032b6570
+        // In Utimaco, EC_PARAMS needs to have the value "edwards25519"
+
+        System.out.println("keyalias: " + keyalias );
+        CKA[] pubTempl = new CKA[] {
+                        new CKA(CKA.EC_PARAMS, "edwards25519"),
+                        new CKA(CKA.WRAP, false),
+                        new CKA(CKA.ENCRYPT, false),
+                        new CKA(CKA.VERIFY, true),
+                        new CKA(CKA.VERIFY_RECOVER, false),
+                        new CKA(CKA.TOKEN, true),
+                        new CKA(CKA.LABEL, ("pub-" + keyalias).getBytes()),
+                        new CKA(CKA.ID, keyalias.getBytes()),
+        };
+        CKA[] privTempl = new CKA[] {
+                        new CKA(CKA.TOKEN, true),
+                        new CKA(CKA.PRIVATE, true),
+                        new CKA(CKA.SENSITIVE, true),
+                        new CKA(CKA.SIGN, true),
+                        new CKA(CKA.SIGN_RECOVER, false),
+                        new CKA(CKA.DECRYPT, false),
+                        new CKA(CKA.UNWRAP, false),
+                        new CKA(CKA.EXTRACTABLE, false),
+                        new CKA(CKA.LABEL, ("priv-" + keyalias).getBytes()),
+                        new CKA(CKA.ID, keyalias.getBytes()),
+        };
+        C.GenerateKeyPair(session, new CKM(CKM.ECDSA_KEY_PAIR_GEN), pubTempl, privTempl, publicKey,
+                        privateKey);
+    }
+
+          /**
+     * Resize buf to specified length. If buf already size 'newSize', then return buf, else return resized buf.
+     * @param buf buf
+     * @param newSize length to resize to
+     * @return if buf already size 'newSize', then return buf, else return resized buf
+     */
+    private byte[] resize(byte[] buf, int newSize) {
+        if (buf == null || newSize >= buf.length) {
+            return buf;
+        }
+        byte[] result = new byte[newSize];
+        System.arraycopy(buf, 0, result, 0, result.length);
+        return result;
+    }
+
+        /**
+     * Generates a keypair using jacknji11 C implementation
+     * 
+     * @param keyAlias    key alias
+     */
+    private void generateEd25519(final String keyAlias){
+
+        byte[] USER_PIN = "1234".getBytes();
+        long INITSLOT = 3;
+        
+        LongRef sessionRef = new LongRef();
+       
+        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
+        C.Initialize();
+
+        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+        C.Login(sessionRef.value, CKU.USER, USER_PIN);
+
+        // Generate Ed25519 key pair
+        LongRef pubKey = new LongRef();
+        LongRef privKey = new LongRef();
+        generateKeyPairEd25519(sessionRef.value(), pubKey, privKey, keyAlias);
+        
+        log.info(String.format(
+                        "testKeyPairEd25519: edwards25519 keypair generated. PublicKey handle: %d, PrivKey handle: %d",
+                        pubKey.value(), privKey.value()));
+
+        CKA[] templ = new CKA[]{
+           new CKA(CKA.VALUE),
+           new CKA(CKA.EC_POINT),
+           new CKA(CKA.EC_PARAMS)
+        };
+        
+        long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        System.out.println(CKR.L2S(rv));
+
+        // allocate memory and call again
+        for (int i = 0; i < templ.length; i++){
+            templ[i].pValue = new byte[(int) templ[i].ulValueLen];
+        }
+
+        //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
+        rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        System.out.println(CKR.L2S(rv));
+
+        System.out.println("CKA from GetAtt: " + templ[0].ulValueLen + " Length\nKey: " + Hex.b2s(resize(templ[0].pValue,(int) templ[0].ulValueLen)));
+
+        final CKA ckaQ = templ[1];
+
+        final CKA ckaParams = templ[2];
+
+        /*
+        final org.bouncycastle.jce.spec.ECParameterSpec bcspec = ECNamedCurveTable.getParameterSpec("ED25519");
+        final PublicKey publicKey;
+
+        
+        X509EncodedKeySpec edSpec = createEdDSAPublicKeySpec(ckaQ.getValue());
+        final KeyFactory keyfact = KeyFactory.getInstance("ED25519", BouncyCastleProvider.PROVIDER_NAME);
+        publicKey = keyfact.generatePublic(edSpec);
+        
+         
+        LongRef certRef = new LongRef();
+
+        CKA[] cert0Template = new CKA[] {
+            new CKA(CKA.CLASS, CKO.CERTIFICATE),
+            new CKA(CKA.CERTIFICATE_TYPE, CKC.CKC_X_509),
+            new CKA(CKA.TOKEN, true),
+            new CKA(CKA.LABEL, keyAlias),
+            new CKA(CKA.SUBJECT, null),
+            new CKA(CKA.ID, keyAlias),
+            new CKA(CKA.VALUE, null)
+        };
+        C.CreateObject(sessionRef.value(), cert0Template,certRef);
+        
+        
+        byte [] msg = "Message to be signed!!".getBytes();
+
+        C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
+
+        LongRef l = new LongRef();
+        long test2 = C.Sign(sessionRef.value(), msg, null, l);
+        System.out.println(CKR.L2S(test2));
+
+        byte[] result = new byte[(int) l.value()];
+        long test3 = C.Sign(sessionRef.value(), msg, result, l);
+        System.out.println(CKR.L2S(test3));
+        //resize(result, (int) l.value());
+
+        System.out.println("Signature: " + result + ",Length: " + l.value());
+
+        log.info(String.format("Ed25519: sigString: %s", Hex.b2s(result)));
+        */
+
+    }
+
     private void generateEdDSA(final String keySpec, final String keyAlias) throws InvalidAlgorithmParameterException {
         if (log.isTraceEnabled()) {
             log.trace(">generate: keySpec " + keySpec+ ", keyEntryName " + keyAlias);
         }
         // Generate the EdDSA Keypair
         switch (keySpec) {
-        case AlgorithmConstants.KEYALGORITHM_ED25519:
-            generateKeyPair(null, keyAlias, AlgorithmConstants.KEYALGORITHM_ED25519, AlgorithmTools.SIG_ALGS_ED25519);
+        case AlgorithmConstants.KEYALGORITHM_ED25519:   
+            generateEd25519(keyAlias);
+            //generateKeyPair(null, keyAlias, AlgorithmConstants.KEYALGORITHM_ED25519, AlgorithmTools.SIG_ALGS_ED25519);
             break;
         case AlgorithmConstants.KEYALGORITHM_ED448:
             generateKeyPair(null, keyAlias, AlgorithmConstants.KEYALGORITHM_ED448, AlgorithmTools.SIG_ALGS_ED448);
