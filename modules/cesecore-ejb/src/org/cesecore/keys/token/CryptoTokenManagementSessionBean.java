@@ -838,7 +838,7 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
             final List<String> keyPairAliases = new ArrayList<>();
             for (final String currentAlias : cryptoToken.getAliases()) {
                 try {
-                    if (cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.doesPrivateKeyExist(currentAlias)) {
+                    if ((cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.getPublicKey(currentAlias).getAlgorithm() == "Ed25519") || (cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.doesPrivateKeyExist(currentAlias) ) ) {
                         keyPairAliases.add(currentAlias);
                     } else {
                         if (log.isDebugEnabled()) {
@@ -867,7 +867,7 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
         final CryptoToken cryptoToken = getCryptoTokenAndAssertExistence(cryptoTokenId);
         // Check if alias is already in use
         assertAliasNotInUse(cryptoToken, alias);
-
+        
         // Support "RSAnnnn" and convert it to the legacy format "nnnn"
         final String keySpecification;
         if (keyGenParams.getKeySpecification().startsWith(AlgorithmConstants.KEYALGORITHM_RSA)) {
@@ -882,10 +882,12 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
         details.put("msg", "Generated new keypair in CryptoToken " + cryptoTokenId);
         details.put("keyAlias", alias);
         details.put("keySpecification", keySpecification);
+
         // Generate key pair
         cryptoToken.generateKeyPair(KeyGenParams.builder(keyGenParams).setKeySpecification(keySpecification).build(), alias);
         // We don't want to test CP5 keys on creation since they're not authorized yet (would fail).
-        if (!cryptoToken.getClass().getName().equals(CryptoTokenFactory.JACKNJI_NAME)) {
+        System.out.println("KeySpec: " + keySpecification);
+        if (!cryptoToken.getClass().getName().equals(CryptoTokenFactory.JACKNJI_NAME) || !(keySpecification == AlgorithmConstants.KEYALGORITHM_ED25519)) {
             cryptoToken.testKeyPair(alias);
         }
         // Merge is important for soft tokens where the data is persisted in the database, but will also update lastUpdate
