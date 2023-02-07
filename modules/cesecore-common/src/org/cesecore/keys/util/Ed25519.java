@@ -8,6 +8,8 @@ import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.security.PrivateKey;
+import java.security.Provider;
 import java.security.PublicKey;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
@@ -50,17 +52,18 @@ import org.pkcs11.jacknji11.Hex;
 import org.pkcs11.jacknji11.LongRef;
 
 public class Ed25519 {
-    private static final Logger log = Logger.getLogger(Ed25519.class);
+    private final Logger log = Logger.getLogger(Ed25519.class);
     
     /**
      * Generates a keypair using jacknji11 C implementation
      * 
      * @param keyAlias    key alias
+     * @return 
      * @throws IOException
      * @throws CertificateException
      * @throws InvalidKeyException
      */
-    public static void generateEd25519(final String keyAlias) throws InvalidKeyException, CertificateException, IOException{
+    public X509Certificate generateEd25519(final String keyAlias, Provider p) throws InvalidKeyException, CertificateException, IOException{
 
         byte[] USER_PIN = "1234".getBytes();
         long INITSLOT = 3;
@@ -82,8 +85,13 @@ public class Ed25519 {
                         "testKeyPairEd25519: edwards25519 keypair generated. PublicKey handle: %d, PrivKey handle: %d",
                         pubKey.value(), privKey.value()));
 
-        generateSelfCertificate(sessionRef, pubKey, privKey, keyAlias);
+        //PrivateKey  priv = hsmPrivKey.getInstance(privKey.value(), "Ed25519", p);
+
+        //setPrivate(priv);
+        
+        return generateSelfCertificate(sessionRef, pubKey, privKey, keyAlias);
     }
+
 
     /**
      * Generates a public-key / private-key Ed25519 pair, create new key objects.
@@ -92,7 +100,7 @@ public class Ed25519 {
      * @param publicKey  gets handle of new public key
      * @param privateKey gets handle of new private key
      */
-    private static void generateKeyPairEd25519(long session, LongRef publicKey, LongRef privateKey, String keyalias) {
+    private void generateKeyPairEd25519(long session, LongRef publicKey, LongRef privateKey, String keyalias) {
         // Attributes from PKCS #11 Cryptographic Token Interface Current Mechanisms
         // Specification Version 2.40 section 2.3.3 - ECDSA public key objects
         /*
@@ -127,22 +135,7 @@ public class Ed25519 {
         C.GenerateKeyPair(session, new CKM(CKM.ECDSA_KEY_PAIR_GEN), pubTempl, privTempl, publicKey, privateKey);
     }
 
-    /**
-     * Resize buf to specified length. If buf already size 'newSize', then return buf, else return resized buf.
-     * @param buf buf
-     * @param newSize length to resize to
-     * @return if buf already size 'newSize', then return buf, else return resized buf
-     */
-    private static byte[] resize(byte[] buf, int newSize) {
-        if (buf == null || newSize >= buf.length) {
-            return buf;
-        }
-        byte[] result = new byte[newSize];
-        System.arraycopy(buf, 0, result, 0, result.length);
-        return result;
-    }
-
-    private static void generateSelfCertificate(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias) throws InvalidKeyException, IOException, CertificateException{
+    private X509Certificate generateSelfCertificate(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias) throws InvalidKeyException, IOException, CertificateException{
 
         final long currentTime = new Date().getTime();
         final Date firstDate = new Date(currentTime - 24 * 60 * 60 * 1000);
@@ -172,15 +165,16 @@ public class Ed25519 {
             new CKA(CKA.EC_PARAMS)
          };
          
-         long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
         // allocate memory and call again
         for (int i = 0; i < templ.length; i++){
             templ[i].pValue = new byte[(int) templ[i].ulValueLen];
         }
         //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
-        rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
         final CKA ecPoint = templ[0];
 
+        System.out.println("EC_Point" + ecPoint.getValue());
         
         certGen.setIssuer(issuer);
         certGen.setSubject(issuer);
@@ -237,86 +231,112 @@ public class Ed25519 {
             new CKA(CKA.VALUE, cert.getEncoded())
         };
         C.CreateObject(sessionRef.value(), certTemplate, certRef);
+
         
         log.info("Generated Certificate");
+
+        return cert;
     }
 
+    public byte[] sign(String alias, byte[] data){
+        byte[] USER_PIN = "1234".getBytes();
+        long INITSLOT = 3;
         
-    
+        LongRef sessionRef = new LongRef();
+       
+        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
+        C.Initialize();
 
-    private static PublicKey getPublicKey(LongRef sessionRef, LongRef pubKey) {
-        CKA[] templ = new CKA[]{
-            new CKA(CKA.VALUE),
-            new CKA(CKA.EC_POINT),
-            new CKA(CKA.EC_PARAMS)
-         };
-         
-         long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+        C.Login(sessionRef.value, CKU.USER, USER_PIN);
+        LongRef privKey = getPrivateKeyRef(alias);
 
-        // allocate memory and call again
-        for (int i = 0; i < templ.length; i++){
-            templ[i].pValue = new byte[(int) templ[i].ulValueLen];
-        }
+        // since the algorythm is Ed25519 there's no need to create a digest.
+        C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
 
-        //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
-        rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        LongRef length = new LongRef();
+        C.Sign(sessionRef.value(), data, null, length);
+        byte[] result = new byte[(int) length.value()];
+        C.Sign(sessionRef.value(), data, result, length);
 
-        log.info(templ);
-        System.out.println("Key Length: " + templ[0].ulValueLen + "\n Key " + Hex.b2s(resize(templ[0].pValue,(int) templ[0].ulValueLen)));
+        log.info("Signature Done");
 
-        //final CKA ckaQ = templ[1];
-        final CKA ecPoint = templ[1];
-
-        final CKA ckaParams = templ[2];
-
-        
-
-        
-        final org.bouncycastle.jce.spec.ECParameterSpec bcspec = ECNamedCurveTable.getParameterSpec("ED25519");
-        
-        X509EncodedKeySpec edSpec;
-        PublicKey publicKey = null;
-
-        try {
-
-        edSpec = createEd25519spec(ecPoint.getValue());
-        final KeyFactory keyfact = KeyFactory.getInstance("ED25519", BouncyCastleProvider.PROVIDER_NAME);
-        publicKey = keyfact.generatePublic(edSpec);
-        } catch (IOException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        } catch (NoSuchAlgorithmException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        } catch (NoSuchProviderException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        } catch (InvalidKeySpecException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
-
-        return publicKey;
+        return result;
     }
 
-    /** Takes the EC point bytes from an EdDSA key and creates a keyspec that we can use to generate the public key object */ 
-    private static X509EncodedKeySpec createEd25519spec(byte[] ECpoint) throws IOException {
-        final byte[] rawPoint;
-        // Turns out that different HSMs store this field differently, guess because P11v3 is not fully implemented yet
-        // SoftHSM2 uses OctetString, same as for ECDSA keys (I think this is what it should be in P11v3)
-        // nCipher (12.60.x) used BitString
-        
-        ASN1Primitive asn1 = ASN1Primitive.fromByteArray(ECpoint);
-        if (asn1 instanceof DERBitString) {
-            rawPoint = ((DERBitString) asn1).getOctets();
-        } else {
-            // If something else than ASN1OctetString we'll get an exception here, which will propagate well 
-            // and give us an informative error message
-            rawPoint = ((ASN1OctetString) asn1).getOctets();
-        }
 
-        AlgorithmIdentifier algId = new AlgorithmIdentifier(EdECObjectIdentifiers.id_Ed25519);
-        return new X509EncodedKeySpec(new SubjectPublicKeyInfo(algId, rawPoint).getEncoded());
+    /**
+     * Gets the LongRef of a Private Key through it's alias.
+     * @param alias alias
+     * @return LongRef of Private Key
+     */
+    public LongRef getPrivateKeyRef(String alias){
+        byte[] USER_PIN = "1234".getBytes();
+        long INITSLOT = 3;
+        
+        LongRef sessionRef = new LongRef();
+       
+        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
+        C.Initialize();
+
+        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+        C.Login(sessionRef.value, CKU.USER, USER_PIN);
+
+        // Generate Ed25519 key pair
+        LongRef objectCount = new LongRef();
+        long[] result = new long[1];
+        CKA[] templ = new CKA[] {new CKA(CKA.LABEL, "priv-" + alias)};
+        C.FindObjectsInit(sessionRef.value(), templ);
+        C.FindObjects(sessionRef.value(), result, objectCount);
+        C.FindObjectsFinal(sessionRef.value());
+
+        LongRef privKey = new LongRef(result[0]);
+        return privKey;
+
+    }
+
+    /**
+     * Gets the LongRef of a Public Key through it's alias.
+     * @param alias alias
+     * @return LongRef of Public Key
+     */
+    public LongRef getPublicKeyRef(String alias){
+        byte[] USER_PIN = "1234".getBytes();
+        long INITSLOT = 3;
+        
+        LongRef sessionRef = new LongRef();
+       
+        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
+        C.Initialize();
+
+        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+        C.Login(sessionRef.value, CKU.USER, USER_PIN);
+
+        // Generate Ed25519 key pair
+        LongRef objectCount = new LongRef();
+        long[] result = new long[1];
+        CKA[] templ = new CKA[] {new CKA(CKA.LABEL, "pub-" + alias)};
+        C.FindObjectsInit(sessionRef.value(), templ);
+        C.FindObjects(sessionRef.value(), result, objectCount);
+        C.FindObjectsFinal(sessionRef.value());
+
+        LongRef pubKey = new LongRef(result[0]);
+        return pubKey;
+    }
+
+    /**
+     * Resize buf to specified length. If buf already size 'newSize', then return buf, else return resized buf.
+     * @param buf buf
+     * @param newSize length to resize to
+     * @return if buf already size 'newSize', then return buf, else return resized buf
+     */
+    private byte[] resize(byte[] buf, int newSize) {
+        if (buf == null || newSize >= buf.length) {
+            return buf;
+        }
+        byte[] result = new byte[newSize];
+        System.arraycopy(buf, 0, result, 0, result.length);
+        return result;
     }
 
 }
