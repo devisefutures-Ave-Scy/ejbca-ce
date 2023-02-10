@@ -5,47 +5,32 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.security.InvalidKeyException;
-import java.security.KeyFactory;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
-import java.security.PrivateKey;
 import java.security.Provider;
-import java.security.PublicKey;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.X509EncodedKeySpec;
 import java.util.Calendar;
 import java.util.Date;
 
 import org.apache.log4j.Logger;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Integer;
-import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1OutputStream;
-import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
 import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.asn1.x500.X500NameBuilder;
-import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x509.TBSCertificate;
 import org.bouncycastle.asn1.x509.Time;
 import org.bouncycastle.asn1.x509.V3TBSCertificateGenerator;
-import org.bouncycastle.cert.X509v3CertificateBuilder;
-import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
-import org.bouncycastle.jce.ECNamedCurveTable;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.cesecore.internal.InternalResources;
 import org.pkcs11.jacknji11.C;
 import org.pkcs11.jacknji11.CKA;
 import org.pkcs11.jacknji11.CKC;
 import org.pkcs11.jacknji11.CKM;
 import org.pkcs11.jacknji11.CKO;
-import org.pkcs11.jacknji11.CKR;
 import org.pkcs11.jacknji11.CKU;
 import org.pkcs11.jacknji11.CK_SESSION_INFO;
 import org.pkcs11.jacknji11.Hex;
@@ -53,7 +38,6 @@ import org.pkcs11.jacknji11.LongRef;
 
 public class Ed25519 {
     private final Logger log = Logger.getLogger(Ed25519.class);
-    
     /**
      * Generates a keypair using jacknji11 C implementation
      * 
@@ -237,6 +221,7 @@ public class Ed25519 {
 
         return cert;
     }
+    
 
     public byte[] sign(String alias, byte[] data){
         byte[] USER_PIN = "1234".getBytes();
@@ -263,7 +248,7 @@ public class Ed25519 {
 
         return result;
     }
-
+        
 
     /**
      * Gets the LongRef of a Private Key through it's alias.
