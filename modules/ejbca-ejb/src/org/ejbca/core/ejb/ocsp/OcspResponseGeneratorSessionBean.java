@@ -391,21 +391,29 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                             }
                             final PrivateKey privateKey;
                             try {
-                                privateKey = cryptoToken.getPrivateKey(keyPairAlias);
+                                PublicKey publicKey = cryptoToken.getPublicKey(keyPairAlias);
+
+                                if(publicKey.getAlgorithm() == "Ed25519"){
+                                    privateKey = null;
+                                }else{
+                                    privateKey = cryptoToken.getPrivateKey(keyPairAlias);
+
+                                    if (privateKey == null) {
+                                        log.warn("Referenced private key with alias " + keyPairAlias + " does not exist. Ignoring CA with id " + caId);
+                                        continue;
+                                    }
+                                }
                             } catch (CryptoTokenOfflineException e) {
                                 log.warn("Referenced private key with alias " + keyPairAlias
                                         + " could not be used. CryptoToken is off-line for CA with id " + caId + ": " + e.getMessage());
                                 continue;
                             }
-                            if (privateKey == null) {
-                                log.warn("Referenced private key with alias " + keyPairAlias + " does not exist. Ignoring CA with id " + caId);
-                                continue;
-                            }
+
+                            
                             final String signatureProviderName = cryptoToken.getSignProviderName();
                             if (!caCertificateChain.isEmpty()) {
                                 generateOcspSigningCacheEntries(caCertificateChain, signatureProviderName, privateKey, ocspConfiguration);
                                 generateOcspConfigCacheEntry(caCertificateChain.get(0), caId, preProduceOcspResponse, storeOcspResponseOnDemand, isMsCaCompatible);
-
                             } else {
                                 log.warn("CA with ID " + caId
                                         + " appears to lack a certificate in the database. This may be a serious error if not in a test environment.");
@@ -578,10 +586,10 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
         OcspSigningCache.INSTANCE.stagingAdd(new OcspSigningCacheEntry(caCertificate, caCertificateStatus, caCertificateChain, null, privateKey,
                 signatureProviderName, null, ocspConfiguration.getOcspResponderIdType()));
         checkWarnings(caCertificateStatus, caCertificate);
+
     }
 
     private void generateOcspConfigCacheEntry(X509Certificate caCertificate, int caId, boolean preProduceOcspResponse, boolean storeOcspResponseOnDemand, boolean isMsCaCompatible) {
-
         // Build OcspPreProductionConfigCache
         OcspDataConfigCache.INSTANCE.stagingAdd(new OcspDataConfigCacheEntry(caCertificate, caId, preProduceOcspResponse, storeOcspResponseOnDemand, isMsCaCompatible));
 
@@ -2871,27 +2879,27 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                     final String subjectDn = CertTools.getSubjectDN(ocspSigningCacheEntry.getCaCertificateChain().get(0));
                     final String serialNumberForLog = CertTools.getSerialNumberAsString(ocspSigningCacheEntry.getOcspSigningCertificate());
                     final String errMsg = intres.getLocalizedMessage("ocsp.errorocspkeynotusable", subjectDn, serialNumberForLog);
-                    final PrivateKey privateKey = ocspSigningCacheEntry.getPrivateKey();
-                    if (privateKey == null) {
-                        sb.append('\n').append(errMsg);
-                        log.error("No key available. " + errMsg);
-                        continue;
+                    
+                    if(ocspSigningCertificate.getPublicKey().getAlgorithm() != "Ed25519"){
+                    
+                        final PrivateKey privateKey = ocspSigningCacheEntry.getPrivateKey();
+                        if (privateKey == null) {
+                            sb.append('\n').append(errMsg);
+                            log.error("No key available. " + errMsg);
+                            continue;
+                        }
+                        if (OcspConfiguration.getHealthCheckSignTest()) {
+                            final String providerName = ocspSigningCacheEntry.getSignatureProviderName();
+                            KeyTools.testKey(privateKey, ocspSigningCertificate.getPublicKey(), providerName);
+                        }
+                        
                     }
+
                     if (OcspConfiguration.getHealthCheckCertificateValidity() && !CertTools.isCertificateValid(ocspSigningCertificate, true) ) {
                         sb.append('\n').append(errMsg);
                         continue;
                     }
-                    if (OcspConfiguration.getHealthCheckSignTest()) {
-                        try {
-                            final String providerName = ocspSigningCacheEntry.getSignatureProviderName();
-                            KeyTools.testKey(privateKey, ocspSigningCertificate.getPublicKey(), providerName);
-                        } catch (InvalidKeyException e) {
-                            // thrown by testKey
-                            sb.append('\n').append(errMsg);
-                            log.error("Key not working. SubjectDN '"+subjectDn+"'. Error comment '"+errMsg+"'. Message '"+e.getMessage());
-                            continue;                   
-                        }
-                    }
+
                     if (log.isDebugEnabled()) {
                         final String name = ocspSigningCacheEntry.getOcspKeyBinding().getName();
                         log.debug("Test of \""+name+"\" OK!");                          

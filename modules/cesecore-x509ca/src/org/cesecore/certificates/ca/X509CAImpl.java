@@ -2240,7 +2240,6 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
         }
         
 
-        System.out.println("End of Ed25519 CA Cert so far");
         // Finally add extensions to certificate generator
         final Extensions exts = extgen.generate();
         ASN1ObjectIdentifier[] oids = exts.getExtensionOIDs();
