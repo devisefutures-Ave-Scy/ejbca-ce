@@ -87,6 +87,7 @@ import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.ocsp.OCSPObjectIdentifiers;
+import org.bouncycastle.asn1.ocsp.ResponderID;
 import org.bouncycastle.asn1.ocsp.RevokedInfo;
 import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -374,7 +375,7 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                                 
                                 final String signatureProviderName = cryptoToken.getSignProviderName();
                                 if (!caCertificateChain.isEmpty()) {
-                                    generateOcspSigningCacheEntries(caCertificateChain, signatureProviderName, privateKey, ocspConfiguration);
+                                    generateOcspSigningCacheEntries(caCertificateChain, signatureProviderName, privateKey, ocspConfiguration, signKeyAlias);
                                 } else {
                                     log.warn("CA with ID " + caId
                                             + " appears to lack a certificate in the database. This may be a serious error if not in a test environment.");
@@ -392,7 +393,7 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                             final PrivateKey privateKey;
                             try {
                                 PublicKey publicKey = cryptoToken.getPublicKey(keyPairAlias);
-
+                                
                                 if(publicKey.getAlgorithm() == "Ed25519"){
                                     privateKey = null;
                                 }else{
@@ -412,7 +413,7 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                             
                             final String signatureProviderName = cryptoToken.getSignProviderName();
                             if (!caCertificateChain.isEmpty()) {
-                                generateOcspSigningCacheEntries(caCertificateChain, signatureProviderName, privateKey, ocspConfiguration);
+                                generateOcspSigningCacheEntries(caCertificateChain, signatureProviderName, privateKey, ocspConfiguration, keyPairAlias);
                                 generateOcspConfigCacheEntry(caCertificateChain.get(0), caId, preProduceOcspResponse, storeOcspResponseOnDemand, isMsCaCompatible);
                             } else {
                                 log.warn("CA with ID " + caId
@@ -441,7 +442,7 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                         }
                         //Add an entry with just a chain and nothing else
                         OcspSigningCache.INSTANCE.stagingAdd(new OcspSigningCacheEntry(caCertificateChain.get(0), caCertificateStatus, null, null,
-                                null, null, null, ocspConfiguration.getOcspResponderIdType()));
+                                null, null, null, ocspConfiguration.getOcspResponderIdType(),null));
                         OcspDataConfigCache.INSTANCE.stagingAdd(new OcspDataConfigCacheEntry(caCertificateChain.get(0), caId, preProduceOcspResponse,
                                 storeOcspResponseOnDemand, isMsCaCompatible));
                     } else if (caInfo.getStatus() == CAConstants.CA_EXPIRED && preProduceOcspResponse) {
@@ -579,12 +580,12 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
     }
     
     private void generateOcspSigningCacheEntries(List<X509Certificate> caCertificateChain, String signatureProviderName, PrivateKey privateKey,
-            GlobalOcspConfiguration ocspConfiguration) {
+            GlobalOcspConfiguration ocspConfiguration, String keyPairAlias) {
         X509Certificate caCertificate = caCertificateChain.get(0);
         final CertificateStatus caCertificateStatus = getRevocationStatusWhenCasPrivateKeyIsCompromised(caCertificate, false);
 
         OcspSigningCache.INSTANCE.stagingAdd(new OcspSigningCacheEntry(caCertificate, caCertificateStatus, caCertificateChain, null, privateKey,
-                signatureProviderName, null, ocspConfiguration.getOcspResponderIdType()));
+                signatureProviderName, null, ocspConfiguration.getOcspResponderIdType(), keyPairAlias));
         checkWarnings(caCertificateStatus, caCertificate);
 
     }
@@ -653,7 +654,7 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
             respIdType = OcspKeyBinding.ResponderIdType.KEYHASH;
         }
         return new OcspSigningCacheEntry(caCertificateChain.get(0), certificateStatus, caCertificateChain, ocspSigningCertificate, privateKey,
-                signatureProviderName, ocspKeyBinding, respIdType);
+                signatureProviderName, ocspKeyBinding, respIdType,null);
     }
     
     /** 
@@ -1403,7 +1404,6 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
             // If the Extended Revoked Definition should be added for certificates that we can not find in the database, see RFC6960 4.4.8
             boolean addExtendedRevokedExtension = false;
             Date producedAt = null;
-            
             for (Req ocspRequest : ocspRequests) {
                 CertificateID certId = ocspRequest.getCertID();
                 ASN1ObjectIdentifier certIdhash = certId.getHashAlgOID();
@@ -1428,7 +1428,6 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                 } else if (!isPreSigning){
                     log.info(intres.getLocalizedMessage("ocsp.inforeceivedrequestwxff", certId.getSerialNumber().toString(16), hash, remoteAddress, xForwardedFor));
                 }
-                
                 ocspSigningCacheEntry = OcspSigningCache.INSTANCE.getEntry(certId);
                 OcspDataConfigCacheEntry ocspDataConfig = OcspDataConfigCache.INSTANCE.getEntry(certId);
                 // Locate the CA which gave out the certificate
@@ -2381,6 +2380,7 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                         X509Certificate signerCert, OcspSigningCacheEntry ocspSigningCacheEntry, Date producedAt)
                                 throws OCSPException, CryptoTokenOfflineException {
         final PrivateKey signerKey = ocspSigningCacheEntry.getPrivateKey();
+        final String Alias = ocspSigningCacheEntry.getAlias();
         final String provider = ocspSigningCacheEntry.getSignatureProviderName();
         BasicOCSPResp returnval = null;
         BasicOCSPRespBuilder basicRes = new BasicOCSPRespBuilder(ocspSigningCacheEntry.getRespId());
@@ -2409,7 +2409,8 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
          * Note that this does in no way break the spirit of the EJB standard, which is to not interrupt EJB's transaction handling by 
          * competing with its own thread pool, since these operations have no database impact.
          */
-        final Future<BasicOCSPResp> task = service.submit(new HsmResponseThread(basicRes, sigAlg, signerKey, chain, provider, producedAt));
+        
+        final Future<BasicOCSPResp> task = service.submit(new HsmResponseThread(basicRes, sigAlg, signerKey, chain, provider, producedAt, Alias, responses, ocspSigningCacheEntry.getRespId(),exts));
         try {
             returnval = task.get(HsmResponseThread.HSM_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException e) {

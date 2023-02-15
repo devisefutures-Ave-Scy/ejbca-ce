@@ -60,6 +60,7 @@ public class OcspSigningCacheEntry {
     private RespID respId;
     private final X509Certificate[] responseCertChain;
     private final boolean signingCertificateForOcspSigning;
+    private String alias;
     
     // we flatten the CertificateIds SHA1 and SHA256 for simpler lookup
     private Set<CertificateID> signedBehalfOfCaIds;
@@ -75,9 +76,10 @@ public class OcspSigningCacheEntry {
 
     public OcspSigningCacheEntry(X509Certificate issuerCaCertificate, CertificateStatus issuerCaCertificateStatus,
             List<X509Certificate> signingCaCertificateChain, X509Certificate ocspSigningCertificate, PrivateKey privateKey,
-            String signatureProviderName, OcspKeyBinding ocspKeyBinding, OcspKeyBinding.ResponderIdType responderIdType) {
+            String signatureProviderName, OcspKeyBinding ocspKeyBinding, OcspKeyBinding.ResponderIdType responderIdType, String alias) {
         this.caCertificateChain = signingCaCertificateChain;
         this.ocspSigningCertificate = ocspSigningCertificate;
+        this.alias = alias;
         if (ocspSigningCertificate == null) {
             // We will sign with a CA key
             fullCertificateChain = signingCaCertificateChain;
@@ -171,6 +173,9 @@ public class OcspSigningCacheEntry {
 
     /** @return the private key that will be used to sign the OCSP response. */
     public PrivateKey getPrivateKey() { return privateKey; }
+
+    /** @return the alias key that will be used to sign the OCSP response. */
+    public String getAlias() { return alias; }
 
     /** @return the signature provider that should be used with this cache entries private key. */
     public String getSignatureProviderName() { return signatureProviderName; }

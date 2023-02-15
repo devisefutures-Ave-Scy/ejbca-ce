@@ -38,6 +38,8 @@ import org.pkcs11.jacknji11.LongRef;
 
 public class Ed25519 {
     private final Logger log = Logger.getLogger(Ed25519.class);
+    private byte[] USER_PIN = "1234".getBytes();
+    private long INITSLOT = 3;
     /**
      * Generates a keypair using jacknji11 C implementation
      * 
@@ -48,9 +50,6 @@ public class Ed25519 {
      * @throws InvalidKeyException
      */
     public X509Certificate generateEd25519(final String keyAlias, Provider p) throws InvalidKeyException, CertificateException, IOException{
-
-        byte[] USER_PIN = "1234".getBytes();
-        long INITSLOT = 3;
         
         LongRef sessionRef = new LongRef();
        
@@ -157,8 +156,6 @@ public class Ed25519 {
         //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
         C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
         final CKA ecPoint = templ[0];
-
-        System.out.println("EC_Point" + ecPoint.getValue());
         
         certGen.setIssuer(issuer);
         certGen.setSubject(issuer);
@@ -224,8 +221,6 @@ public class Ed25519 {
     
 
     public byte[] sign(String alias, byte[] data){
-        byte[] USER_PIN = "1234".getBytes();
-        long INITSLOT = 3;
         
         LongRef sessionRef = new LongRef();
        
@@ -256,8 +251,6 @@ public class Ed25519 {
      * @return LongRef of Private Key
      */
     public LongRef getPrivateKeyRef(String alias){
-        byte[] USER_PIN = "1234".getBytes();
-        long INITSLOT = 3;
         
         LongRef sessionRef = new LongRef();
        
@@ -286,8 +279,6 @@ public class Ed25519 {
      * @return LongRef of Public Key
      */
     public LongRef getPublicKeyRef(String alias){
-        byte[] USER_PIN = "1234".getBytes();
-        long INITSLOT = 3;
         
         LongRef sessionRef = new LongRef();
        
