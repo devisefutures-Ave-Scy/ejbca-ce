@@ -33,6 +33,7 @@ import org.cesecore.jndi.JndiConstants;
 import org.cesecore.keybind.InternalKeyBindingMgmtSessionLocal;
 import org.cesecore.keybind.KeyBindingFinder;
 import org.cesecore.keys.token.p11.exception.NoSuchSlotException;
+import org.cesecore.keys.util.Ed25519;
 import org.cesecore.keys.util.KeyTools;
 import org.cesecore.keys.util.PublicKeyWrapper;
 import org.cesecore.util.CryptoProviderTools;
@@ -886,7 +887,6 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
         // Generate key pair
         cryptoToken.generateKeyPair(KeyGenParams.builder(keyGenParams).setKeySpecification(keySpecification).build(), alias);
         // We don't want to test CP5 keys on creation since they're not authorized yet (would fail).
-        System.out.println("KeySpec: " + keySpecification);
         if (!cryptoToken.getClass().getName().equals(CryptoTokenFactory.JACKNJI_NAME) || !(keySpecification == AlgorithmConstants.KEYALGORITHM_ED25519)) {
             cryptoToken.testKeyPair(alias);
         }
@@ -970,10 +970,14 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
         if (!cryptoToken.isAliasUsed(alias)) {
             throw new InvalidKeyException("Alias " + alias + " is not in use");
         }
+
         final Map<String, Object> details = new LinkedHashMap<String, Object>();
         details.put("msg", "Deleted key pair from CryptoToken " + cryptoTokenId);
         details.put("keyAlias", alias);
         try {
+            if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519"){
+                Ed25519.removeKeyPair(alias, cryptoToken.getSignProviderName());
+            }
             cryptoToken.deleteEntry(alias);
         } catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e) {
             throw new InvalidKeyException(e);

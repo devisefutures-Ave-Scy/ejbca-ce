@@ -99,7 +99,6 @@ public class CrlCreateSessionBean implements CrlCreateSessionLocal, CrlCreateSes
     	// Authorization for other things, that we have access to the CA has already been done
     	final int caid = ca.getCAId();
     	authorizedToCreateCRL(admin, caid);
-    	
     	try {
     		if ( (ca.getStatus() != CAConstants.CA_ACTIVE) && (ca.getStatus() != CAConstants.CA_WAITING_CERTIFICATE_RESPONSE) ) {
     			String msg = intres.getLocalizedMessage("createcert.canotactive", ca.getSubjectDN());
@@ -112,7 +111,6 @@ public class CrlCreateSessionBean implements CrlCreateSessionLocal, CrlCreateSes
     		if (cryptoToken==null) {
     		    throw new CryptoTokenOfflineException("Could not find CryptoToken with id " + ca.getCAToken().getCryptoTokenId());
     		}
-    		
 
     		Certificate latestCaCertForPartition = null; 
     		if (ca instanceof X509CA && ((X509CA)ca).isMsCaCompatible()) {

@@ -122,6 +122,7 @@ public class HsmResponseThread implements Callable<BasicOCSPResp> {
              * Lowering this allocation from 20480 to 4096 bytes under ECA-4084 which should still be plenty.
              */
 
+
             if(signingAlgorithm.equals("Ed25519")){
 
                 Iterator it = responsesList.iterator();
@@ -146,7 +147,7 @@ public class HsmResponseThread implements Callable<BasicOCSPResp> {
                 ResponseData  tbsResp = new ResponseData(respID.toASN1Primitive(), new ASN1GeneralizedTime(producedAt!=null? producedAt : new Date()), new DERSequence(responses), exts);
                 DERBitString    bitSig;
                 Ed25519 ed = new Ed25519();
-                byte[] signature  = ed.sign(alias, tbsResp.getEncoded(ASN1Encoding.DER));
+                byte[] signature  = ed.sign(alias, tbsResp.getEncoded(ASN1Encoding.DER), provider);
 
                 bitSig = new DERBitString(signature);
 

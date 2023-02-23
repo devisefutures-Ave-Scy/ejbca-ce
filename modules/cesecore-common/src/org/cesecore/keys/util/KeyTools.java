@@ -1347,7 +1347,7 @@ public final class KeyTools {
      *             fails for other reasons such as a NoSuchAlgorithmException or SignatureException.
      *             if the provider is not installed.
      */
-    public static void testKey(String alias,final PublicKey pub) throws InvalidKeyException { // NOPMD:this is not a junit test
+    public static void testKey(String alias,final PublicKey pub, String providerName) throws InvalidKeyException { // NOPMD:this is not a junit test
         final byte input[] = "Lillan gick pa vagen ut, motte dar en katt...".getBytes();
         final byte signBV[];
         try {
@@ -1366,7 +1366,7 @@ public final class KeyTools {
             /** Used for Ed25519 in Jacknji11  */
             Ed25519 ed = new Ed25519();
 
-            signBV = ed.sign(alias, input);
+            signBV = ed.sign(alias, input, providerName);
             
             {
             

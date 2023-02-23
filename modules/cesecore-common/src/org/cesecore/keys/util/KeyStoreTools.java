@@ -340,7 +340,7 @@ public class KeyStoreTools {
             try {
                 Ed25519 ed = new Ed25519();
                 Provider p = this.keyStore.getProvider();
-                final X509Certificate selfSignedCert = ed.generateEd25519(keyAlias, p);
+                final X509Certificate selfSignedCert = ed.generateEd25519(keyAlias, p.getName());
                 final X509Certificate chain[] = new X509Certificate[]{selfSignedCert};
                
                 //System.out.println(this.getKeyStore().getKey("ed1", null));

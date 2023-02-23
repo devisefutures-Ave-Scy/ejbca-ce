@@ -5,12 +5,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.security.InvalidKeyException;
-import java.security.Provider;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
 
 import org.apache.log4j.Logger;
 import org.bouncycastle.asn1.ASN1EncodableVector;
@@ -25,12 +27,13 @@ import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x509.TBSCertificate;
 import org.bouncycastle.asn1.x509.Time;
 import org.bouncycastle.asn1.x509.V3TBSCertificateGenerator;
-import org.cesecore.internal.InternalResources;
 import org.pkcs11.jacknji11.C;
 import org.pkcs11.jacknji11.CKA;
 import org.pkcs11.jacknji11.CKC;
 import org.pkcs11.jacknji11.CKM;
 import org.pkcs11.jacknji11.CKO;
+import org.pkcs11.jacknji11.CKR;
+import org.pkcs11.jacknji11.CKRException;
 import org.pkcs11.jacknji11.CKU;
 import org.pkcs11.jacknji11.CK_SESSION_INFO;
 import org.pkcs11.jacknji11.Hex;
@@ -38,8 +41,11 @@ import org.pkcs11.jacknji11.LongRef;
 
 public class Ed25519 {
     private final Logger log = Logger.getLogger(Ed25519.class);
-    private byte[] USER_PIN = "1234".getBytes();
-    private long INITSLOT = 3;
+    //private static byte[] USER_PIN = "1234".getBytes();
+    //private static long INITSLOT = 3;
+
+    private static HashMap<String,HsmInformation> hsmInfoCache = new HashMap<String,HsmInformation>();
+
     /**
      * Generates a keypair using jacknji11 C implementation
      * 
@@ -49,15 +55,18 @@ public class Ed25519 {
      * @throws CertificateException
      * @throws InvalidKeyException
      */
-    public X509Certificate generateEd25519(final String keyAlias, Provider p) throws InvalidKeyException, CertificateException, IOException{
-        
-        LongRef sessionRef = new LongRef();
+    public X509Certificate generateEd25519(final String keyAlias, String providerName) throws InvalidKeyException, CertificateException, IOException{
+
+        HsmInformation hsmInfo = hsmInfoCache.get(providerName);
+        LongRef sessionRef = hsmInfo.getSessionRef();
        
+        /* 
         C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
         C.Initialize();
 
         C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
         C.Login(sessionRef.value, CKU.USER, USER_PIN);
+        */
 
         // Generate Ed25519 key pair
         LongRef pubKey = new LongRef();
@@ -72,7 +81,7 @@ public class Ed25519 {
 
         //setPrivate(priv);
         
-        return generateSelfCertificate(sessionRef, pubKey, privKey, keyAlias);
+        return generateSelfCertificate(sessionRef, pubKey, privKey, keyAlias, hsmInfo);
     }
 
 
@@ -118,7 +127,7 @@ public class Ed25519 {
         C.GenerateKeyPair(session, new CKM(CKM.ECDSA_KEY_PAIR_GEN), pubTempl, privTempl, publicKey, privateKey);
     }
 
-    private X509Certificate generateSelfCertificate(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias) throws InvalidKeyException, IOException, CertificateException{
+    private X509Certificate generateSelfCertificate(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias, HsmInformation hsmInfo) throws InvalidKeyException, IOException, CertificateException{
 
         final long currentTime = new Date().getTime();
         final Date firstDate = new Date(currentTime - 24 * 60 * 60 * 1000);
@@ -213,15 +222,19 @@ public class Ed25519 {
         };
         C.CreateObject(sessionRef.value(), certTemplate, certRef);
 
-        
-        log.info("Generated Certificate");
+        updateKeypairCache(keyAlias, hsmInfo);
 
         return cert;
     }
     
 
-    public byte[] sign(String alias, byte[] data){
-        
+    public byte[] sign(String alias, byte[] data, String providerName){
+
+        HsmInformation hsmInfo = hsmInfoCache.get(providerName);
+        LongRef sessionRef = hsmInfo.getSessionRef();
+        updateKeypairCache(alias, hsmInfo);
+
+        /* 
         LongRef sessionRef = new LongRef();
        
         C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
@@ -229,7 +242,9 @@ public class Ed25519 {
 
         C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
         C.Login(sessionRef.value, CKU.USER, USER_PIN);
-        LongRef privKey = getPrivateKeyRef(alias);
+        */
+
+        LongRef privKey = hsmInfo.KeyPairCache.get(alias).getPrivKey();
 
         // since the algorythm is Ed25519 there's no need to create a digest.
         C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
@@ -243,15 +258,14 @@ public class Ed25519 {
 
         return result;
     }
-        
 
-    /**
-     * Gets the LongRef of a Private Key through it's alias.
-     * @param alias alias
-     * @return LongRef of Private Key
-     */
-    public LongRef getPrivateKeyRef(String alias){
-        
+    public static void removeKeyPair(String alias, String providerName){
+
+        HsmInformation hsmInfo = hsmInfoCache.get(providerName);
+        LongRef sessionRef = hsmInfo.getSessionRef();
+
+
+        /* 
         LongRef sessionRef = new LongRef();
        
         C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
@@ -259,8 +273,101 @@ public class Ed25519 {
 
         C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
         C.Login(sessionRef.value, CKU.USER, USER_PIN);
+        */
 
-        // Generate Ed25519 key pair
+        if(!hsmInfo.KeyPairCache.containsKey(alias)){
+            updateKeypairCache(alias,hsmInfo);
+        }
+
+        LongRef privateKey = hsmInfo.KeyPairCache.get(alias).getPrivKey();
+        LongRef publicKey = hsmInfo.KeyPairCache.get(alias).getPubKey();
+        LongRef certificate = hsmInfo.KeyPairCache.get(alias).getCertificate();
+
+        long rv = C.DestroyObject(sessionRef.value(), privateKey.value());
+        if (rv != CKR.OK) throw new CKRException(rv);
+
+        long rv2 = C.DestroyObject(sessionRef.value(), publicKey.value());
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+
+        long rv3 = C.DestroyObject(sessionRef.value(), certificate.value());
+        if (rv3 != CKR.OK) throw new CKRException(rv3);
+        hsmInfo.KeyPairCache.remove(alias);
+    }
+
+    public static HsmInformation updateHsmInfoCache(String providerName, String tokenName, String slotLabel, String authCode, String sharedLibrary){
+        
+        if(hsmInfoCache.containsKey(providerName)){
+            HsmInformation hsmInf = hsmInfoCache.get(providerName);
+            if(!(hsmInf.authcode == authCode)){
+                hsmInf.setAuthCode(authCode);
+                System.out.println("Changing AuthCode for: " + tokenName);
+            }
+                hsmInf.addTokenName(tokenName);
+            System.out.println(hsmInf.getTokenNames());
+            return hsmInf;
+        }else{
+        
+            System.out.println("HSM Info: " + hsmInfoCache);
+            LongRef sessionRef = new LongRef();
+        
+            C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
+            C.Initialize();
+
+            C.OpenSession(Long.parseLong(slotLabel), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+            C.Login(sessionRef.value, CKU.USER, authCode.getBytes());
+
+            HsmInformation inf = new HsmInformation(authCode, slotLabel, tokenName, sessionRef, sharedLibrary);
+            hsmInfoCache.put(providerName, inf);
+            System.out.println("HSM Info: " + hsmInfoCache);
+            return inf;
+        }
+    }
+
+    public static void removeTokenFromCache(String providerName, String tokenName){
+        HsmInformation hsmInf = hsmInfoCache.get(providerName);
+        System.out.println("Before remove" + hsmInf.tokenName + ", " + hsmInfoCache);
+
+        if(hsmInf.tokenName.contains(tokenName)){
+            hsmInf.tokenName.remove(tokenName);
+        }
+        if(hsmInf.tokenName.isEmpty()){
+            hsmInfoCache.remove(providerName);
+        }
+
+        System.out.println("After remove" + hsmInf.tokenName + ", " + hsmInfoCache);
+    }
+
+    public static void updateKeypairCache(String alias, HsmInformation hsmCache){
+        if(!hsmCache.KeyPairCache.containsKey(alias)){
+            LongRef privateKey = getPrivateKeyRef(alias, hsmCache.getSessionRef());
+            LongRef publicKey = getPublicKeyRef(alias, hsmCache.getSessionRef());
+            LongRef certificate = getCertificateRef(alias, hsmCache.getSessionRef());
+
+            KeyPairInfo keypair = new KeyPairInfo(publicKey, privateKey, certificate);
+            hsmCache.addKeyPair(alias, keypair);
+            System.out.println("Adding " + alias + " to cache.");
+            System.out.println("Cache: " + hsmCache.KeyPairCache);
+        }
+    }
+        
+
+    /**
+     * Gets the LongRef of a Private Key through it's alias.
+     * @param alias alias
+     * @return LongRef of Private Key
+     */
+    public static LongRef getPrivateKeyRef(String alias, LongRef sessionRef){
+
+        /*        
+        LongRef sessionRef = new LongRef();
+       
+        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
+        C.Initialize();
+
+        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+        C.Login(sessionRef.value, CKU.USER, USER_PIN);
+        */
+
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
         CKA[] templ = new CKA[] {new CKA(CKA.LABEL, "priv-" + alias)};
@@ -278,8 +385,8 @@ public class Ed25519 {
      * @param alias alias
      * @return LongRef of Public Key
      */
-    public LongRef getPublicKeyRef(String alias){
-        
+    public static LongRef getPublicKeyRef(String alias, LongRef sessionRef){
+        /* 
         LongRef sessionRef = new LongRef();
        
         C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
@@ -287,8 +394,37 @@ public class Ed25519 {
 
         C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
         C.Login(sessionRef.value, CKU.USER, USER_PIN);
+        */
 
         // Generate Ed25519 key pair
+        LongRef objectCount = new LongRef();
+        long[] result = new long[1];
+        CKA[] templ = new CKA[] {new CKA(CKA.LABEL, alias)};
+        C.FindObjectsInit(sessionRef.value(), templ);
+        C.FindObjects(sessionRef.value(), result, objectCount);
+        C.FindObjectsFinal(sessionRef.value());
+
+        LongRef certificate = new LongRef(result[0]);
+        return certificate;
+    }
+
+    /**
+     * Gets the LongRef of a Certificate through it's alias.
+     * @param alias alias
+     * @return LongRef of Certificate
+     */
+    public static LongRef getCertificateRef(String alias, LongRef sessionRef){
+        
+        /* 
+        LongRef sessionRef = new LongRef();
+       
+        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
+        C.Initialize();
+
+        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+        C.Login(sessionRef.value, CKU.USER, USER_PIN);
+        */
+
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
         CKA[] templ = new CKA[] {new CKA(CKA.LABEL, "pub-" + alias)};
@@ -313,6 +449,100 @@ public class Ed25519 {
         byte[] result = new byte[newSize];
         System.arraycopy(buf, 0, result, 0, result.length);
         return result;
+    }
+
+    static public class HsmInformation{
+        private String authcode;
+        private String slot;
+        private List<String> tokenName;
+        private LongRef sessionRef;
+        private String sharedLibrary;
+        private HashMap<String,KeyPairInfo> KeyPairCache;
+        
+
+        public HsmInformation (String authcode, String slot, String tokenName, LongRef sessionRef, String sharedLibrary){
+            this.authcode = authcode;
+            this.slot = slot;
+            this.tokenName = new ArrayList<String>();
+            this.tokenName.add(tokenName);
+            this.sessionRef = sessionRef;
+            this.sharedLibrary = sharedLibrary;
+            this.KeyPairCache = new HashMap<String,KeyPairInfo>();
+
+        }
+
+        public void setAuthCode(String authcode) {
+            this.authcode = authcode;
+        }
+
+        public String getAuthCode(){
+            return this.authcode;
+        }
+
+        public List<String> getTokenNames(){
+            return this.tokenName;
+        }
+
+        public void addTokenName(String tokenName){
+            this.tokenName.add(tokenName);
+        }
+
+        public String getSlot(){
+            return this.slot;
+        }
+
+        public LongRef getSessionRef(){
+            return this.sessionRef;
+        }
+
+        public String getSharedLibrary(){
+            return this.sharedLibrary;
+        }
+
+        public void addKeyPair(String alias, KeyPairInfo keypair){
+            KeyPairCache.put(alias, keypair);
+        }
+
+        public KeyPairInfo getKeyPair(String alias){
+            return KeyPairCache.get(alias);
+        }
+    }
+
+    static public class KeyPairInfo{
+        private LongRef pubKey;
+        private LongRef privKey;
+        private LongRef certificate;
+
+        public KeyPairInfo(LongRef pubkey, LongRef privKey, LongRef certificate){
+            this.pubKey = pubkey;
+            this.privKey = privKey;
+            this.certificate = certificate;
+        }
+
+        public LongRef getPubKey(){
+            return this.pubKey;
+        }
+
+        public LongRef getPrivKey(){
+            return this.privKey;
+        }
+
+        public LongRef getCertificate(){
+            return this.certificate;
+        }
+
+        public void setPubKey(LongRef pubKey){
+            this.pubKey = pubKey;
+        }
+
+        public void setPrivKey(LongRef privKey){
+            this.pubKey = privKey;
+        }
+
+        public void setCertificate(LongRef certificate){
+            this.pubKey = certificate;
+        }
+
     }
 
 }

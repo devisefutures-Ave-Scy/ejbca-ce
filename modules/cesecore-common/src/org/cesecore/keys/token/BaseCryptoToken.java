@@ -150,8 +150,6 @@ public abstract class BaseCryptoToken implements CryptoToken {
         }
 
         testKeyPair(alias, publicKey, privateKey);
-
-        System.out.println("Passed testKeyPair gets");
         
     }
 
@@ -174,10 +172,8 @@ public abstract class BaseCryptoToken implements CryptoToken {
 
             KeyTools.testKey(privateKey, publicKey, getSignProviderName());
         }else{
-            KeyTools.testKey(alias, publicKey);
+            KeyTools.testKey(alias, publicKey, getSignProviderName());
         }
-
-        System.out.println("Passed Extractable test");
         
     }
 
@@ -481,10 +477,9 @@ public abstract class BaseCryptoToken implements CryptoToken {
 
     @Override
     public boolean isAliasUsed(final String alias) {
-        System.out.println("Reached isAliasUsed");
         boolean aliasInUse = false;
         try {
-            getPublicKey(alias, true);
+            getPublicKey(alias, false);
             aliasInUse = true;
         } catch (CryptoTokenOfflineException e) {
             try {
@@ -674,7 +669,6 @@ public abstract class BaseCryptoToken implements CryptoToken {
 
     @Override
     public List<String> getAliases() throws KeyStoreException, CryptoTokenOfflineException {
-        System.out.print("Reached BaseCrypto getAliases\n");
         return Collections.list(getKeyStore().aliases());
     }
 

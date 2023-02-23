@@ -736,7 +736,6 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
         if (cainfo.getStatus() == CAConstants.CA_UNINITIALIZED) {
             throw new IllegalStateException("This method should never be called on uninitialized CAs");
         }
-
         final int caid = cainfo.getCAId();
         List<Certificate> certificatechain = createCertificateChain(admin, ca, cryptoToken, certprofile);
         int castatus = getCaStatus(cainfo);
@@ -816,8 +815,11 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
                     log.debug("CAAdminSessionBean : " + cainfo.getSubjectDN());
                 }
                 EndEntityInformation cadata = makeEndEntityInformation(cainfo);
+                
                 cacertificate = ca.generateCertificate(cryptoToken, cadata, cryptoToken.getPublicKey(aliasCertSign), -1, null,
                         cainfo.getEncodedValidity(), certprofile, sequence, cceConfig);
+
+                
                 if (log.isDebugEnabled()) {
                     log.debug("CAAdminSessionBean : " + CertTools.getSubjectDN(cacertificate));
                 }

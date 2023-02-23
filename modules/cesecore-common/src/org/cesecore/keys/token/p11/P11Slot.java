@@ -164,6 +164,11 @@ public class P11Slot {
         return provider;
     }
 
+   /** @return the sharedLibrary of the slot. */
+   public String getSharedLibrary() {
+    return sharedLibrary;
+}
+
     /**
      * Get P11 slot instance. Only one instance (provider) will ever be created for each slot regardless of how many times this method is called.
      * @param slotLabel the labeling of the slot, regardless of label type. 

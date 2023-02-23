@@ -1138,7 +1138,7 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
 
         if(caPublicKey.getAlgorithm() == "Ed25519"){
         return generateCertificateEd25519(subject, request, publicKey, catoken.getAliasFromPurpose(purpose)  , keyusage, notBefore, notAfter, certProfile, extensions,
-            caPublicKey, certGenParams, cceConfig, /*linkCertificate=*/false, /*caNameChange=*/false);
+            caPublicKey, certGenParams, cceConfig, /*linkCertificate=*/false, /*caNameChange=*/false, cryptoToken.getSignProviderName());
 
         }else{
 
@@ -1834,9 +1834,8 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
  * @throws CTLogException
      */
     protected Certificate generateCertificateEd25519(final EndEntityInformation subject, final RequestMessage providedRequestMessage, final PublicKey providedPublicKey, String keyalias, 
-            final int keyusage, final Date notBefore, final Date notAfter, final CertificateProfile certProfile, final Extensions extensions,
-                                            final PublicKey caPublicKey,
-            CertificateGenerationParams certGenParams, AvailableCustomCertificateExtensionsConfiguration cceConfig, boolean linkCertificate, boolean caNameChange)
+            final int keyusage, final Date notBefore, final Date notAfter, final CertificateProfile certProfile, final Extensions extensions, final PublicKey caPublicKey,
+            CertificateGenerationParams certGenParams, AvailableCustomCertificateExtensionsConfiguration cceConfig, boolean linkCertificate, boolean caNameChange, String providerName)
             throws CAOfflineException, InvalidAlgorithmException, IllegalValidityException, IllegalNameException, CertificateExtensionException,
              OperatorCreationException, CertificateCreateException, SignatureException, IllegalKeyException {
 
@@ -2380,7 +2379,7 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
                 dOut.writeObject(preCert);
 
                 byte[] certBlock = bOut.toByteArray();
-                byte[] signature = ed.sign(keyalias, certBlock);
+                byte[] signature = ed.sign(keyalias, certBlock, providerName);
 
                 ASN1EncodableVector v = new ASN1EncodableVector();
                 v.add(preCert);
@@ -2478,7 +2477,7 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
             dOut.writeObject(preCert);
     
             byte[] certBlock = bOut.toByteArray();
-            byte[] signature = ed.sign(keyalias, certBlock);
+            byte[] signature = ed.sign(keyalias, certBlock, providerName);
     
             ASN1EncodableVector v = new ASN1EncodableVector();
             v.add(preCert);
@@ -2767,7 +2766,7 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
         if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519"){
             final X509CRLHolder crl;
 
-            crl = generateCRLEd25519(cryptoToken, crlPartitionIndex, certs, crlPeriod, crlnumber, isDeltaCRL, basecrlnumber, partitionCaCert, validFrom);
+            crl = generateCRLEd25519(cryptoToken, crlPartitionIndex, certs, crlPeriod, crlnumber, isDeltaCRL, basecrlnumber, partitionCaCert, validFrom, cryptoToken.getSignProviderName());
 
             return crl;
 
@@ -3011,7 +3010,7 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
      * @throws SignatureException
      */
     private X509CRLHolder generateCRLEd25519(CryptoToken cryptoToken, int crlPartitionIndex, Collection<RevokedCertInfo> certs, long crlPeriod, int crlnumber, 
-            boolean isDeltaCRL, int basecrlnumber, Certificate partitionCaCert, final Date validFrom) throws CryptoTokenOfflineException, IOException, SignatureException {
+            boolean isDeltaCRL, int basecrlnumber, Certificate partitionCaCert, final Date validFrom, String providerName) throws CryptoTokenOfflineException, IOException, SignatureException {
         final String sigAlg = getCAInfo().getCAToken().getSignatureAlgorithm();
 
         if (log.isDebugEnabled()) {
@@ -3210,7 +3209,7 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
         byte[] certBlock = bOut.toByteArray();
 
         Ed25519 ed = new Ed25519();
-        byte[] signature = ed.sign(alias, certBlock);
+        byte[] signature = ed.sign(alias, certBlock, providerName);
 
         ASN1EncodableVector v = new ASN1EncodableVector();
         v.add(crlist);
