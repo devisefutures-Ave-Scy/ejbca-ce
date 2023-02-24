@@ -207,7 +207,9 @@ public class PKCS11CryptoToken extends BaseCryptoToken implements P11SlotUser {
     @Override
     public void deactivate() {
         try {
-            Ed25519.removeTokenFromCache(getP11slot().getProvider().getName(), getTokenName());
+            if(this.p11slot != null && getTokenName() != null){
+                Ed25519.removeTokenFromCache(getP11slot().getProvider().getName(), getTokenName());
+            }
             setKeyStore(null);
         } catch (KeyStoreException e) {
             // Exception should only be thrown if loading a non-null KeyStore fails

@@ -295,14 +295,29 @@ public class Ed25519 {
     }
 
     public static HsmInformation updateHsmInfoCache(String providerName, String tokenName, String slotLabel, String authCode, String sharedLibrary){
-        
         if(hsmInfoCache.containsKey(providerName)){
             HsmInformation hsmInf = hsmInfoCache.get(providerName);
-            if(!(hsmInf.authcode == authCode)){
+            if(!(hsmInf.authcode.equals(authCode))){
+                C.CloseSession(hsmInf.getSessionRef().value());
                 hsmInf.setAuthCode(authCode);
+
+                LongRef sessionRef = new LongRef();
+        
+                C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
+                C.Initialize();
+
+                C.OpenSession(Long.parseLong(slotLabel), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+                C.Login(sessionRef.value, CKU.USER, authCode.getBytes());
+
+                hsmInf.setSessionRef(sessionRef);
+
                 System.out.println("Changing AuthCode for: " + tokenName);
+
             }
+            if(!hsmInf.tokenName.contains(tokenName)){
                 hsmInf.addTokenName(tokenName);
+            }
+
             System.out.println(hsmInf.getTokenNames());
             return hsmInf;
         }else{
@@ -323,9 +338,17 @@ public class Ed25519 {
         }
     }
 
+    public static void updateCachedName(String providerName, String oldTokenName, String newTokenName) {
+        HsmInformation hsmInf = hsmInfoCache.get(providerName);
+        if(!hsmInf.tokenName.contains(newTokenName)){
+            hsmInf.tokenName.remove(oldTokenName);
+            hsmInf.tokenName.add(newTokenName);
+        }
+    }
+
     public static void removeTokenFromCache(String providerName, String tokenName){
         HsmInformation hsmInf = hsmInfoCache.get(providerName);
-        System.out.println("Before remove" + hsmInf.tokenName + ", " + hsmInfoCache);
+        System.out.println("Before remove" + hsmInf.getTokenNames() + ", " + hsmInfoCache);
 
         if(hsmInf.tokenName.contains(tokenName)){
             hsmInf.tokenName.remove(tokenName);
@@ -469,6 +492,10 @@ public class Ed25519 {
             this.sharedLibrary = sharedLibrary;
             this.KeyPairCache = new HashMap<String,KeyPairInfo>();
 
+        }
+
+        public void setSessionRef(LongRef sessionRef) {
+            this.sessionRef = sessionRef;
         }
 
         public void setAuthCode(String authcode) {

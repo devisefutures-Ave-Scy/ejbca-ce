@@ -524,6 +524,10 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
             newCryptoToken.setProperties(properties);
             newCryptoToken.setTokenName(tokenName);
         }
+
+        //Make Changes to Ed25519 Cache
+        Ed25519.updateCachedName(currentCryptoToken.getSignProviderName(), currentCryptoToken.getTokenName() , tokenName);
+
         final Map<String, Object> details = new LinkedHashMap<String, Object>();
         details.put("msg", "Modified CryptoToken with id " + cryptoTokenId);
         putDelta("name", currentCryptoToken.getTokenName(), newCryptoToken.getTokenName(), details);
