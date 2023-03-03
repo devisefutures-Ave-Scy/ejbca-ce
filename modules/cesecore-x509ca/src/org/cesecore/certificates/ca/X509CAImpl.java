@@ -1130,11 +1130,9 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
             IllegalValidityException, IllegalNameException, OperatorCreationException, CertificateCreateException, CertificateExtensionException, SignatureException, IllegalKeyException {
         // Before we start, check if the CA is off-line, we don't have to waste time
         // one the stuff below of we are off-line. The line below will throw CryptoTokenOfflineException of CA is offline
-        System.out.println("Reached X509 generateCertificate");   
         final CAToken catoken = getCAToken();
         final int purpose = getUseNextCACert(request) ? CATokenConstants.CAKEYPURPOSE_CERTSIGN_NEXT : CATokenConstants.CAKEYPURPOSE_CERTSIGN;
         final PublicKey caPublicKey = cryptoToken.getPublicKey(catoken.getAliasFromPurpose(purpose));
-        System.out.println("caPublicKey: " + catoken.getAliasFromPurpose(purpose));
 
         if(caPublicKey.getAlgorithm() == "Ed25519"){
         return generateCertificateEd25519(subject, request, publicKey, catoken.getAliasFromPurpose(purpose)  , keyusage, notBefore, notAfter, certProfile, extensions,
@@ -1839,7 +1837,6 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
             throws CAOfflineException, InvalidAlgorithmException, IllegalValidityException, IllegalNameException, CertificateExtensionException,
              OperatorCreationException, CertificateCreateException, SignatureException, IllegalKeyException {
 
-        System.out.println("Reached X509CAImpl");
           /** Used for Ed25519 in Jacknji11  */
         Ed25519 ed = new Ed25519();
         // We must only allow signing to take place if the CA itself is on line, even if the token is on-line.
@@ -2463,11 +2460,8 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
             log.trace(">certgen.generate");
         }
 
-        System.out.println(">certgen.generate");
-
         Extensions extcertgenFinal = extgen.generate();
         certGen.setExtensions(extcertgenFinal);
-        System.out.println(certGen.toString());
         TBSCertificate preCert = certGen.generateTBSCertificate();
 
         X509Certificate cert;

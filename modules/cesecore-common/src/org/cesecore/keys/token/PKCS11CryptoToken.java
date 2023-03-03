@@ -155,6 +155,7 @@ public class PKCS11CryptoToken extends BaseCryptoToken implements P11SlotUser {
             final KeyStore newKeyStore = createKeyStore(authCode);
             setKeyStore(newKeyStore);
             HsmInformation hsmCache = Ed25519.updateHsmInfoCache(this.p11slot.getProvider().getName(), getTokenName(), this.sSlotLabel, String.valueOf(authCode), this.p11slot.getSharedLibrary());
+            Ed25519.noCertFix(this.p11slot.getProvider().getName());
             for(String alias : getAliases()){
                 if(getPublicKey(alias).getAlgorithm() == "Ed25519"){
                     Ed25519.updateKeypairCache(alias, hsmCache);

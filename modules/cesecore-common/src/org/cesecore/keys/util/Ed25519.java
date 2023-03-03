@@ -27,9 +27,11 @@ import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x509.TBSCertificate;
 import org.bouncycastle.asn1.x509.Time;
 import org.bouncycastle.asn1.x509.V3TBSCertificateGenerator;
+import org.ejbca.cvc.example.GenerateCert;
 import org.pkcs11.jacknji11.C;
 import org.pkcs11.jacknji11.CKA;
 import org.pkcs11.jacknji11.CKC;
+import org.pkcs11.jacknji11.CKK;
 import org.pkcs11.jacknji11.CKM;
 import org.pkcs11.jacknji11.CKO;
 import org.pkcs11.jacknji11.CKR;
@@ -40,7 +42,7 @@ import org.pkcs11.jacknji11.Hex;
 import org.pkcs11.jacknji11.LongRef;
 
 public class Ed25519 {
-    private final Logger log = Logger.getLogger(Ed25519.class);
+    private final static Logger log = Logger.getLogger(Ed25519.class);
     //private static byte[] USER_PIN = "1234".getBytes();
     //private static long INITSLOT = 3;
 
@@ -109,7 +111,7 @@ public class Ed25519 {
                         new CKA(CKA.VERIFY, true),
                         new CKA(CKA.VERIFY_RECOVER, false),
                         new CKA(CKA.TOKEN, true),
-                        new CKA(CKA.LABEL, ("pub-" + keyalias).getBytes()),
+                        new CKA(CKA.LABEL, (keyalias + "-public").getBytes()),
                         new CKA(CKA.ID, keyalias.getBytes()),
         };
         CKA[] privTempl = new CKA[] {
@@ -121,13 +123,13 @@ public class Ed25519 {
                         new CKA(CKA.DECRYPT, false),
                         new CKA(CKA.UNWRAP, false),
                         new CKA(CKA.EXTRACTABLE, false),
-                        new CKA(CKA.LABEL, ("priv-" + keyalias).getBytes()),
+                        new CKA(CKA.LABEL, (keyalias + "-private").getBytes()),
                         new CKA(CKA.ID, keyalias.getBytes()),
         };
         C.GenerateKeyPair(session, new CKM(CKM.ECDSA_KEY_PAIR_GEN), pubTempl, privTempl, publicKey, privateKey);
     }
 
-    private X509Certificate generateSelfCertificate(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias, HsmInformation hsmInfo) throws InvalidKeyException, IOException, CertificateException{
+    private static X509Certificate generateSelfCertificate(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias, HsmInformation hsmInfo) throws InvalidKeyException, IOException, CertificateException{
 
         final long currentTime = new Date().getTime();
         final Date firstDate = new Date(currentTime - 24 * 60 * 60 * 1000);
@@ -135,13 +137,6 @@ public class Ed25519 {
         final X500Name issuer = new X500Name("CN=Dummy certificate created by a CESeCore application");
         final BigInteger serno = BigInteger.valueOf(firstDate.getTime());
 
-        /* 
-        final PublicKey publicKey = getPublicKey(sessionRef,pubKey);
-
-        if (publicKey == null) {
-            throw new InvalidKeyException("Public key is null");
-        }
-        */
 
         Calendar expiry = Calendar.getInstance();
                 int validity = (30 * 24 * 60 * 60 * 365) * 1000;
@@ -311,18 +306,13 @@ public class Ed25519 {
 
                 hsmInf.setSessionRef(sessionRef);
 
-                System.out.println("Changing AuthCode for: " + tokenName);
-
             }
             if(!hsmInf.tokenName.contains(tokenName)){
                 hsmInf.addTokenName(tokenName);
             }
-
-            System.out.println(hsmInf.getTokenNames());
             return hsmInf;
         }else{
         
-            System.out.println("HSM Info: " + hsmInfoCache);
             LongRef sessionRef = new LongRef();
         
             C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
@@ -333,7 +323,6 @@ public class Ed25519 {
 
             HsmInformation inf = new HsmInformation(authCode, slotLabel, tokenName, sessionRef, sharedLibrary);
             hsmInfoCache.put(providerName, inf);
-            System.out.println("HSM Info: " + hsmInfoCache);
             return inf;
         }
     }
@@ -348,7 +337,6 @@ public class Ed25519 {
 
     public static void removeTokenFromCache(String providerName, String tokenName){
         HsmInformation hsmInf = hsmInfoCache.get(providerName);
-        System.out.println("Before remove" + hsmInf.getTokenNames() + ", " + hsmInfoCache);
 
         if(hsmInf.tokenName.contains(tokenName)){
             hsmInf.tokenName.remove(tokenName);
@@ -357,7 +345,6 @@ public class Ed25519 {
             hsmInfoCache.remove(providerName);
         }
 
-        System.out.println("After remove" + hsmInf.tokenName + ", " + hsmInfoCache);
     }
 
     public static void updateKeypairCache(String alias, HsmInformation hsmCache){
@@ -368,8 +355,7 @@ public class Ed25519 {
 
             KeyPairInfo keypair = new KeyPairInfo(publicKey, privateKey, certificate);
             hsmCache.addKeyPair(alias, keypair);
-            System.out.println("Adding " + alias + " to cache.");
-            System.out.println("Cache: " + hsmCache.KeyPairCache);
+            log.info("Adding " + alias + " to cache.");
         }
     }
         
@@ -380,20 +366,9 @@ public class Ed25519 {
      * @return LongRef of Private Key
      */
     public static LongRef getPrivateKeyRef(String alias, LongRef sessionRef){
-
-        /*        
-        LongRef sessionRef = new LongRef();
-       
-        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
-        C.Initialize();
-
-        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
-        C.Login(sessionRef.value, CKU.USER, USER_PIN);
-        */
-
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
-        CKA[] templ = new CKA[] {new CKA(CKA.LABEL, "priv-" + alias)};
+        CKA[] templ = new CKA[] {new CKA(CKA.LABEL, alias + "-private" )};
         C.FindObjectsInit(sessionRef.value(), templ);
         C.FindObjects(sessionRef.value(), result, objectCount);
         C.FindObjectsFinal(sessionRef.value());
@@ -408,18 +383,7 @@ public class Ed25519 {
      * @param alias alias
      * @return LongRef of Public Key
      */
-    public static LongRef getPublicKeyRef(String alias, LongRef sessionRef){
-        /* 
-        LongRef sessionRef = new LongRef();
-       
-        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
-        C.Initialize();
-
-        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
-        C.Login(sessionRef.value, CKU.USER, USER_PIN);
-        */
-
-        // Generate Ed25519 key pair
+    public static LongRef getCertificateRef(String alias, LongRef sessionRef){
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
         CKA[] templ = new CKA[] {new CKA(CKA.LABEL, alias)};
@@ -431,26 +395,38 @@ public class Ed25519 {
         return certificate;
     }
 
+     /**
+     * Gets the Id through public key LongRef.
+     * @param LongRef pubKey
+     * @param LongRef sessionRef
+     * @return Byte[] id
+     */
+    public static String getID(LongRef pubKey, LongRef sessionRef){
+
+        CKA[] templ = new CKA[]{
+            new CKA(CKA.ID),
+         };
+         
+        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        // allocate memory and call again
+        for (int i = 0; i < templ.length; i++){
+            templ[i].pValue = new byte[(int) templ[i].ulValueLen];
+        }
+        //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
+        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        final CKA id = templ[0];
+        return id.getValueStr();
+    }
+
     /**
      * Gets the LongRef of a Certificate through it's alias.
      * @param alias alias
      * @return LongRef of Certificate
      */
-    public static LongRef getCertificateRef(String alias, LongRef sessionRef){
-        
-        /* 
-        LongRef sessionRef = new LongRef();
-       
-        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
-        C.Initialize();
-
-        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
-        C.Login(sessionRef.value, CKU.USER, USER_PIN);
-        */
-
+    public static LongRef getPublicKeyRef(String alias, LongRef sessionRef){
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
-        CKA[] templ = new CKA[] {new CKA(CKA.LABEL, "pub-" + alias)};
+        CKA[] templ = new CKA[] {new CKA(CKA.LABEL, alias + "-public")};
         C.FindObjectsInit(sessionRef.value(), templ);
         C.FindObjects(sessionRef.value(), result, objectCount);
         C.FindObjectsFinal(sessionRef.value());
@@ -465,7 +441,7 @@ public class Ed25519 {
      * @param newSize length to resize to
      * @return if buf already size 'newSize', then return buf, else return resized buf
      */
-    private byte[] resize(byte[] buf, int newSize) {
+    private static byte[] resize(byte[] buf, int newSize) {
         if (buf == null || newSize >= buf.length) {
             return buf;
         }
@@ -570,6 +546,174 @@ public class Ed25519 {
             this.pubKey = certificate;
         }
 
+    }
+
+    public static void noCertFix(String providerName){
+
+        List<String> aliasList = new ArrayList<String>();
+
+        HsmInformation hsmInf = hsmInfoCache.get(providerName);
+        LongRef sessionRef = hsmInf.getSessionRef();
+
+        LongRef objectCount = new LongRef();
+        long[] found = new long[1024];
+
+        CKA[] templ = new CKA[] {new CKA(CKA.CLASS, CKO.PUBLIC_KEY)};
+
+        long rv = C.FindObjectsInit(sessionRef.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
+        long rv2 = C.FindObjects(sessionRef.value(), found, objectCount);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+
+        long count = objectCount.value();
+
+        long[] result = new long[(int) count];
+        System.arraycopy(found, 0, result, 0, result.length);
+        
+        long rv3 = C.FindObjectsFinal(sessionRef.value());
+        if (rv3 != CKR.OK) throw new CKRException(rv3);
+
+
+        for(long ref : result){
+            LongRef tempRef = new LongRef(ref);
+
+            CKA[] templ2 = new CKA[]{
+                new CKA(CKA.LABEL),
+             };
+
+            long rv4 = C.GetAttributeValue(sessionRef.value(), tempRef.value(), templ2);
+            if (rv4 != CKR.OK) throw new CKRException(rv4);
+
+            // allocate memory and call again
+            for (int i = 0; i < templ.length; i++){
+                templ2[i].pValue = new byte[(int) templ2[i].ulValueLen];
+            }
+            //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
+            long rv5 = C.GetAttributeValue(sessionRef.value(), tempRef.value(), templ2);
+            if (rv5 != CKR.OK) throw new CKRException(rv5);
+            final CKA label = templ2[0];
+
+            String s = label.getValueStr();
+            String alias = s.substring(0, s.length() - 7);
+
+            aliasList.add(alias);
+        }
+
+        for(String alias : aliasList){
+            LongRef privateKey = getPrivateKeyRef(alias, sessionRef);
+            LongRef publicKey = getPublicKeyRef(alias, sessionRef);
+            LongRef certificate = getCertificateRef(alias, sessionRef);
+
+
+            if(certificate.value == (long) 0 ){
+                String id = getID(publicKey, sessionRef);
+                
+                try {
+                    generateSelfCertificateFix(sessionRef, publicKey, privateKey, alias, hsmInf , id);
+                } catch (InvalidKeyException | CertificateException | IOException e) {
+                    e.printStackTrace();
+                }
+                
+                
+            }
+             
+
+        }
+
+
+    }
+
+    private static X509Certificate generateSelfCertificateFix(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias, HsmInformation hsmInfo, String id) throws InvalidKeyException, IOException, CertificateException{
+
+        final long currentTime = new Date().getTime();
+        final Date firstDate = new Date(currentTime - 24 * 60 * 60 * 1000);
+        final Date lastDate = new Date(currentTime + (long) (30 * 24 * 60 * 60 * 365) * 1000);
+        final X500Name issuer = new X500Name("CN=Dummy certificate created by a CESeCore application");
+        final BigInteger serno = BigInteger.valueOf(firstDate.getTime());
+
+
+        Calendar expiry = Calendar.getInstance();
+                int validity = (30 * 24 * 60 * 60 * 365) * 1000;
+                expiry.add(Calendar.DAY_OF_YEAR, validity);
+
+        // Certificate structure
+        V3TBSCertificateGenerator certGen = new V3TBSCertificateGenerator();
+        certGen.setSerialNumber(new ASN1Integer(serno));
+
+        CKA[] templ = new CKA[]{
+            new CKA(CKA.VALUE),
+            new CKA(CKA.EC_POINT),
+            new CKA(CKA.EC_PARAMS)
+         };
+         
+        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        // allocate memory and call again
+        for (int i = 0; i < templ.length; i++){
+            templ[i].pValue = new byte[(int) templ[i].ulValueLen];
+        }
+        //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
+        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        final CKA ecPoint = templ[0];
+        
+        certGen.setIssuer(issuer);
+        certGen.setSubject(issuer);
+        certGen.setStartDate(new Time(firstDate));
+        certGen.setEndDate(new Time(lastDate));
+        certGen.setSubjectPublicKeyInfo(
+                                new SubjectPublicKeyInfo(new AlgorithmIdentifier(EdECObjectIdentifiers.id_Ed25519),
+                                ecPoint.getValue()));
+
+        certGen.setSignature(new AlgorithmIdentifier(EdECObjectIdentifiers.id_Ed25519));
+
+        // generate certificate
+        TBSCertificate tbsCert = certGen.generateTBSCertificate();
+
+        log.info(String.format("testCertificateEd25519: Certificate:\n%s", Hex.b2s(tbsCert.getEncoded())));
+
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+        ASN1OutputStream dOut = ASN1OutputStream.create(bOut);
+        dOut.writeObject(tbsCert);
+
+        byte[] certBlock = bOut.toByteArray();
+
+        // since the algorythm is Ed25519 there's no need to create a digest.
+        C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
+
+        LongRef length = new LongRef();
+        C.Sign(sessionRef.value(), certBlock, null, length);
+        byte[] result = new byte[(int) length.value()];
+        C.Sign(sessionRef.value(), certBlock, result, length);
+        byte[] signature = resize(result, (int) length.value());
+
+        ASN1EncodableVector v = new ASN1EncodableVector();
+        v.add(tbsCert);
+        v.add(new AlgorithmIdentifier(EdECObjectIdentifiers.id_Ed25519));
+        v.add(new DERBitString(signature));
+
+        DERSequence der = new DERSequence(v);
+        ByteArrayInputStream baos = new ByteArrayInputStream(der.getEncoded());
+
+        X509Certificate cert = (X509Certificate) CertificateFactory.getInstance("X.509")
+                        .generateCertificate(baos);
+
+        LongRef certRef = new LongRef();
+
+        CKA[] certTemplate = new CKA[] {
+            new CKA(CKA.CLASS, CKO.CERTIFICATE),
+            new CKA(CKA.CERTIFICATE_TYPE, CKC.CKC_X_509),
+            new CKA(CKA.TOKEN, true),
+            new CKA(CKA.LABEL, keyAlias),
+            new CKA(CKA.SUBJECT, cert.getSubjectX500Principal().getEncoded()),
+            new CKA(CKA.ISSUER,cert.getSubjectX500Principal().getEncoded()),
+            new CKA(CKA.SERIAL_NUMBER, cert.getSerialNumber().toByteArray()),
+            new CKA(CKA.ID, id),
+            new CKA(CKA.VALUE, cert.getEncoded())
+        };
+        C.CreateObject(sessionRef.value(), certTemplate, certRef);
+
+        updateKeypairCache(keyAlias, hsmInfo);
+
+        return cert;
     }
 
 }

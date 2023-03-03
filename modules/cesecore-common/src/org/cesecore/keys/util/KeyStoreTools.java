@@ -343,7 +343,6 @@ public class KeyStoreTools {
                 final X509Certificate selfSignedCert = ed.generateEd25519(keyAlias, p.getName());
                 final X509Certificate chain[] = new X509Certificate[]{selfSignedCert};
                
-                //System.out.println(this.getKeyStore().getKey("ed1", null));
                 this.getKeyStore().setAliasEntry(keyAlias,chain);
             } catch (InvalidKeyException | CertificateException | IOException | KeyStoreException e) {
                 // TODO Auto-generated catch block
@@ -474,7 +473,6 @@ public class KeyStoreTools {
                 final KeyPair keyPair = kpg.generateKeyPair();
                 final X509Certificate selfSignedCert = getSelfCertificate("CN=Dummy certificate created by a CESeCore application", (long) 30 * 24 * 60 * 60 * 365, certSignAlgorithms, keyPair);
                 final X509Certificate chain[] = new X509Certificate[]{selfSignedCert};
-                System.out.println(keyPair.getPrivate().getClass() + "\n" +keyPair.getPrivate().getClass()+ "\n" +keyPair.getPrivate().getFormat());
                 if (log.isDebugEnabled()) {
                     log.debug("Creating certificate with entry " + keyAlias + '.');
                 }
