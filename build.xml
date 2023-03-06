@@ -714,6 +714,7 @@
         	</zipfileset>
         	<zipfileset prefix="lib" dir="${lib}/hibernate" excludes="${bundle-hibernate-exclude}"/>
         	<zipfileset prefix="lib" dir="${dist.dir}" includes="ejbca-common.jar"/>
+
 		</ear>
     	<antcall target="signjar" inheritall="true" inheritrefs="true">
         	<param name="signjar.file" value="${caear}"/>

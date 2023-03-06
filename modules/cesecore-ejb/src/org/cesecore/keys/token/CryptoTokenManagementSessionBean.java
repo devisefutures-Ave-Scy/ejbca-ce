@@ -33,6 +33,7 @@ import org.cesecore.jndi.JndiConstants;
 import org.cesecore.keybind.InternalKeyBindingMgmtSessionLocal;
 import org.cesecore.keybind.KeyBindingFinder;
 import org.cesecore.keys.token.p11.exception.NoSuchSlotException;
+import org.cesecore.keys.util.Ed25519;
 import org.cesecore.keys.util.KeyTools;
 import org.cesecore.keys.util.PublicKeyWrapper;
 import org.cesecore.util.CryptoProviderTools;
@@ -523,6 +524,10 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
             newCryptoToken.setProperties(properties);
             newCryptoToken.setTokenName(tokenName);
         }
+
+        //Make Changes to Ed25519 Cache
+        Ed25519.updateCachedName(currentCryptoToken.getSignProviderName(), currentCryptoToken.getTokenName() , tokenName);
+
         final Map<String, Object> details = new LinkedHashMap<String, Object>();
         details.put("msg", "Modified CryptoToken with id " + cryptoTokenId);
         putDelta("name", currentCryptoToken.getTokenName(), newCryptoToken.getTokenName(), details);
@@ -838,7 +843,7 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
             final List<String> keyPairAliases = new ArrayList<>();
             for (final String currentAlias : cryptoToken.getAliases()) {
                 try {
-                    if (cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.doesPrivateKeyExist(currentAlias)) {
+                    if ((cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.getPublicKey(currentAlias).getAlgorithm() == "Ed25519") || (cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.doesPrivateKeyExist(currentAlias) ) ) {
                         keyPairAliases.add(currentAlias);
                     } else {
                         if (log.isDebugEnabled()) {
@@ -867,7 +872,7 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
         final CryptoToken cryptoToken = getCryptoTokenAndAssertExistence(cryptoTokenId);
         // Check if alias is already in use
         assertAliasNotInUse(cryptoToken, alias);
-
+        
         // Support "RSAnnnn" and convert it to the legacy format "nnnn"
         final String keySpecification;
         if (keyGenParams.getKeySpecification().startsWith(AlgorithmConstants.KEYALGORITHM_RSA)) {
@@ -882,10 +887,11 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
         details.put("msg", "Generated new keypair in CryptoToken " + cryptoTokenId);
         details.put("keyAlias", alias);
         details.put("keySpecification", keySpecification);
+
         // Generate key pair
         cryptoToken.generateKeyPair(KeyGenParams.builder(keyGenParams).setKeySpecification(keySpecification).build(), alias);
         // We don't want to test CP5 keys on creation since they're not authorized yet (would fail).
-        if (!cryptoToken.getClass().getName().equals(CryptoTokenFactory.JACKNJI_NAME)) {
+        if (!cryptoToken.getClass().getName().equals(CryptoTokenFactory.JACKNJI_NAME) || !(keySpecification == AlgorithmConstants.KEYALGORITHM_ED25519)) {
             cryptoToken.testKeyPair(alias);
         }
         // Merge is important for soft tokens where the data is persisted in the database, but will also update lastUpdate
@@ -968,10 +974,14 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
         if (!cryptoToken.isAliasUsed(alias)) {
             throw new InvalidKeyException("Alias " + alias + " is not in use");
         }
+
         final Map<String, Object> details = new LinkedHashMap<String, Object>();
         details.put("msg", "Deleted key pair from CryptoToken " + cryptoTokenId);
         details.put("keyAlias", alias);
         try {
+            if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519"){
+                Ed25519.removeKeyPair(alias, cryptoToken.getSignProviderName());
+            }
             cryptoToken.deleteEntry(alias);
         } catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e) {
             throw new InvalidKeyException(e);

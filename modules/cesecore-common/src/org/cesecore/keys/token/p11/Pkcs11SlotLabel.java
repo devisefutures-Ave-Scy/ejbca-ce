@@ -138,12 +138,15 @@ public class Pkcs11SlotLabel {
         default:
             throw new IllegalStateException("This should not ever happen if all type of slots are tested.");
         }
+        /* 
         {// We will first try to construct the more competent IAIK provider, if it exists in the classpath
             final Provider prov = getIAIKP11Provider(slot, libFile, this.type);
+            //final Provider prov = null;
             if (prov != null) {
                 return prov;
             }
         }
+        */
         {// if that does not exist, we will revert back to use the SUN provider
             final Provider prov = getSunP11Provider( getSunP11ProviderInputStream(slot, libFile, this.type, attributesFile, privateKeyLabel) );
             if (prov != null) {
@@ -220,6 +223,7 @@ public class Pkcs11SlotLabel {
      */
     private static Provider getIAIKP11Provider(final long slot, final File libFile, final Pkcs11SlotLabelType type) {
         // Properties for the IAIK PKCS#11 provider
+
         final Properties prop = new Properties();
         try {
             prop.setProperty("PKCS11_NATIVE_MODULE", libFile.getCanonicalPath());
@@ -241,6 +245,7 @@ public class Pkcs11SlotLabel {
             // iaik PKCS11 has Properties as constructor argument
             ret = implClass.getConstructor(Properties.class).newInstance(prop);
         } catch (ClassNotFoundException e) {
+            log.info("ClassNotFoundException",e);
             return null;
         } catch (ReflectiveOperationException | IllegalArgumentException | SecurityException e) {
             log.debug("IAIK provider exists but could not be instantiated", e);
@@ -249,6 +254,7 @@ public class Pkcs11SlotLabel {
         if ( ret==null ) {
             return null;
         }
+
         try {
             // It's not enough just to add the p11 provider. Depending on algorithms we may have to install the IAIK JCE provider as well in order
             // to support algorithm delegation

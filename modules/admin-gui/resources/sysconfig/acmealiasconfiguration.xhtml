@@ -112,7 +112,9 @@
 								styleClass="help" style="font-size: smaller"/>
 						</h:panelGroup>
 							<br /><h:inputText value="#{acmeAliasConfigMBean.currentAlias.raNameGenPrefix}"
+
 							    title="#{web.text.FORMAT_STRING}"
+
 								disabled="#{!acmeAliasConfigMBean.currentAliasEditMode}" />
 							<br />
 						<h:panelGroup>
@@ -124,7 +126,9 @@
 							<br />
 						</h:panelGroup>
 						<h:inputText value="#{acmeAliasConfigMBean.currentAlias.raNameGenPostfix}"
+
 						    title="#{web.text.FORMAT_STRING}"
+
 							disabled="#{!acmeAliasConfigMBean.currentAliasEditMode}" />
 					</h:panelGroup>
 					
@@ -197,8 +201,10 @@
                     </h:panelGroup>
                     <h:panelGroup id="webUrl" >
                         <h:inputText  value="#{acmeAliasConfigMBean.currentAlias.urlTemplate}" size="45"
+
                             title="#{web.text.FORMAT_URL}"
                             rendered="#{acmeAliasConfigMBean.currentAliasEditMode}">
+
                             <f:validator validatorId="urlValidator"/>
                         </h:inputText>
                         <h:outputText value="#{acmeAliasConfigMBean.currentAlias.urlTemplate}" rendered="#{!acmeAliasConfigMBean.currentAliasEditMode}"/>
