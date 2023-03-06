@@ -15,6 +15,9 @@ package org.ejbca.core.model.era;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.math.BigInteger;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -195,6 +198,11 @@ public class RaMasterApiProxyBean implements RaMasterApiProxyBeanLocal {
     private RaMasterApi[] raMasterApis = null;
     private RaMasterApi[] raMasterApisLocalFirst = null;
 
+    // Used in tests
+    private RaMasterApi[] savedRaMasterApisBeforeTest;
+    private RaMasterApi[] savedRaMasterApisLocalFirstBeforeTest;
+    private List<String> functionTraceForTest;
+
     /** Default constructor */
     public RaMasterApiProxyBean() {
     }
@@ -245,6 +253,56 @@ public class RaMasterApiProxyBean implements RaMasterApiProxyBeanLocal {
     public void deferLocalForTest() {
         raMasterApisLocalFirst = (RaMasterApi[]) ArrayUtils.removeElement(raMasterApisLocalFirst, raMasterApiSession);
         raMasterApisLocalFirst = (RaMasterApi[]) ArrayUtils.add(raMasterApisLocalFirst, raMasterApiSession);
+    }
+
+    // Use in tests only!
+    @Override
+    public void enableFunctionTracingForTest() {
+        restoreFunctionTracingAfterTest(); // if already tracing
+        final int numBackends = raMasterApis.length;
+        savedRaMasterApisBeforeTest = raMasterApis;
+        savedRaMasterApisLocalFirstBeforeTest = raMasterApisLocalFirst;
+        functionTraceForTest = new ArrayList<>();
+        String suffix = TEST_TRACE_SUFFIX_REMOTE;
+        raMasterApis = new RaMasterApi[numBackends];
+        raMasterApisLocalFirst = new RaMasterApi[numBackends];
+        for (int i = 0; i < numBackends; i++) {
+            final RaMasterApi wrapped = wrapInTracingProxy(savedRaMasterApisBeforeTest[i], suffix);
+            raMasterApis[i] = wrapped;
+            raMasterApisLocalFirst[numBackends-1 - i] = wrapped;
+            suffix = TEST_TRACE_SUFFIX_LOCAL;
+        }
+    }
+
+    private RaMasterApi wrapInTracingProxy(final RaMasterApi raMasterApi, final String suffix) {
+        final List<String> functionTrace = functionTraceForTest;
+        return (RaMasterApi) Proxy.newProxyInstance(RaMasterApi.class.getClassLoader(),
+                new Class[] { RaMasterApi.class },
+                new InvocationHandler() {
+                    @Override
+                    public Object invoke(final Object proxy, final Method method, final Object[] args) throws Throwable {
+                        functionTrace.add(method.getName() + suffix);
+                        return method.invoke(raMasterApi, args);
+                    }
+                });
+    }
+
+    // Use in tests only!
+    @Override
+    public List<String> getFunctionTraceForTest() {
+        return functionTraceForTest;
+    }
+
+    // Use in tests only!
+    @Override
+    public void restoreFunctionTracingAfterTest() {
+        if (savedRaMasterApisBeforeTest != null) {
+            raMasterApis = savedRaMasterApisBeforeTest;
+            raMasterApisLocalFirst = savedRaMasterApisLocalFirstBeforeTest;
+            savedRaMasterApisBeforeTest = null;
+            savedRaMasterApisLocalFirstBeforeTest = null;
+            functionTraceForTest = null;
+        }
     }
 
     @Override
@@ -425,6 +483,23 @@ public class RaMasterApiProxyBean implements RaMasterApiProxyBeanLocal {
             if (raMasterApi.isBackendAvailable() && raMasterApi.getApiVersion() >= 1) {
                 try {
                     for (final Role role : raMasterApi.getAuthorizedRoles(authenticationToken)) {
+                        roleMap.put(role.getRoleId(), role);
+                    }
+                } catch (UnsupportedOperationException | RaMasterBackendUnavailableException e) {
+                    // Just try next implementation
+                }
+            }
+        }
+        return new ArrayList<>(roleMap.values());
+    }
+    
+    @Override
+    public List<Role> getRolesAuthenticationTokenIsMemberOf(final AuthenticationToken authenticationToken) {
+        final Map<Integer, Role> roleMap = new HashMap<>();
+        for (final RaMasterApi raMasterApi : raMasterApisLocalFirst) {
+            if (raMasterApi.isBackendAvailable() && raMasterApi.getApiVersion() >= 15) {
+                try {
+                    for (final Role role : raMasterApi.getRolesAuthenticationTokenIsMemberOf(authenticationToken)) {
                         roleMap.put(role.getRoleId(), role);
                     }
                 } catch (UnsupportedOperationException | RaMasterBackendUnavailableException e) {
@@ -682,7 +757,7 @@ public class RaMasterApiProxyBean implements RaMasterApiProxyBeanLocal {
     @Override
     public boolean addRequestResponse(AuthenticationToken authenticationToken, RaApprovalResponseRequest requestResponse)
             throws AuthorizationDeniedException, ApprovalException, ApprovalRequestExpiredException, ApprovalRequestExecutionException,
-            AdminAlreadyApprovedRequestException, SelfApprovalException, AuthenticationFailedException {
+            AdminAlreadyApprovedRequestException, SelfApprovalException, AuthenticationFailedException, EndEntityExistsException {
         for (final RaMasterApi raMasterApi : raMasterApisLocalFirst) {
             if (raMasterApi.isBackendAvailable()) {
                 try {
@@ -738,6 +813,44 @@ public class RaMasterApiProxyBean implements RaMasterApiProxyBeanLocal {
             if (raMasterApi.isBackendAvailable()) {
                 try {
                     if (raMasterApi.getApiVersion() >= 10) {
+                        searchResponse = raMasterApi.searchForCertificateChain(authenticationToken, fingerprint);
+                        if (searchResponse != null) {
+                            break;
+                        }
+                    } else {
+                        searchResponse = new ArrayList<>();
+                        do {
+                            CertificateDataWrapper cdw = raMasterApi.searchForCertificate(authenticationToken, fingerprint);
+                            searchResponse.add(cdw);
+                            if (cdw != null && !cdw.getCertificateData().getCaFingerprint().equals(cdw.getCertificateData().getFingerprint())) {
+                                fingerprint = cdw.getCertificateData().getCaFingerprint();
+                            } else {
+                                fingerprint = null;
+                            }
+
+                        } while (fingerprint != null);
+                        break;
+                    }
+                } catch (UnsupportedOperationException | RaMasterBackendUnavailableException e) {
+                    // Just try next implementation
+                }
+            }
+        }
+        return searchResponse;
+    }
+    
+    @Override
+    public List<CertificateWrapper> searchForCertificateChainWithPreferredRoot(AuthenticationToken authenticationToken, String fingerprint, String rootSubjectDnHash) {
+        List<CertificateWrapper> searchResponse = null;
+        for (final RaMasterApi raMasterApi : raMasterApisLocalFirst) {
+            if (raMasterApi.isBackendAvailable()) {
+                try {
+                    if (raMasterApi.getApiVersion() >= 15) {
+                        searchResponse = raMasterApi.searchForCertificateChainWithPreferredRoot(authenticationToken, fingerprint, rootSubjectDnHash);
+                        if (searchResponse != null) {
+                            break;
+                        }
+                    } else if (raMasterApi.getApiVersion() >= 10) {
                         searchResponse = raMasterApi.searchForCertificateChain(authenticationToken, fingerprint);
                         if (searchResponse != null) {
                             break;
@@ -1633,6 +1746,36 @@ public class RaMasterApiProxyBean implements RaMasterApiProxyBeanLocal {
         }
         if (caDoesntExistException != null) {
             throw caDoesntExistException;
+        }
+        return null;
+    }
+    
+    @Override
+    public byte[] enrollAndIssueSshCertificate(final AuthenticationToken authenticationToken, final EndEntityInformation endEntityInformation,
+            final SshRequestMessage sshRequestMessage)
+            throws AuthorizationDeniedException, EjbcaException, EndEntityProfileValidationException {
+        AuthorizationDeniedException authorizationDeniedException = null;
+
+        for (final RaMasterApi raMasterApi : raMasterApisLocalFirst) {
+            if (log.isDebugEnabled()) {
+                log.debug("raMasterApi calling enrollAndIssueSshCertificate: " + raMasterApi.getApiVersion() + ", "
+                        + raMasterApi.isBackendAvailable() + ", " + raMasterApi.getClass());
+            }
+            if (raMasterApi.isBackendAvailable() && raMasterApi.getApiVersion() >= 15) {
+                try {
+                    return raMasterApi.enrollAndIssueSshCertificate(authenticationToken, endEntityInformation, sshRequestMessage);
+                } catch (AuthorizationDeniedException e) {
+                    if (authorizationDeniedException == null) {
+                        authorizationDeniedException = e;
+                    }
+                    // Just try next implementation
+                } catch (UnsupportedOperationException | RaMasterBackendUnavailableException e) {
+                    // Just try next implementation
+                }
+            }
+        }
+        if (authorizationDeniedException != null) {
+            throw authorizationDeniedException;
         }
         return null;
     }

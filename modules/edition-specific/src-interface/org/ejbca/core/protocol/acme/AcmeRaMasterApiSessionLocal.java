@@ -133,6 +133,9 @@ public interface AcmeRaMasterApiSessionLocal {
     /** @see org.ejbca.core.model.era.RaMasterApi#getAuthorizedCAInfos(AuthenticationToken) */
     IdNameHashMap<CAInfo> getAuthorizedCAInfos(AuthenticationToken authenticationToken);
 
+    /** @see org.ejbca.core.model.era.RaMasterApi#isAuthorizedNoLogging(AuthenticationToken, String...) */
+    boolean isAuthorizedNoLogging(AuthenticationToken authenticationToken, String...resources);
+
     /** @see org.ejbca.core.model.era.RaMasterApi#searchUser(AuthenticationToken, String) */
     EndEntityInformation searchUser(AuthenticationToken authenticationToken, String username);
     
@@ -157,5 +160,7 @@ public interface AcmeRaMasterApiSessionLocal {
     <T extends ConfigurationBase> T getGlobalConfiguration(Class<T> type);
     
     boolean isPeerAuthorizedAcme();
+
+    List<CertificateWrapper> searchForCertificateChain(AuthenticationToken authenticationToken, String fingerprint, String rootSubjectDnHash);
 
 }

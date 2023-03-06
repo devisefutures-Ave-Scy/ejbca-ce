@@ -26,6 +26,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /** Tests DN merging
  * 
  * @version $Id$
@@ -526,6 +529,9 @@ public class EndEntityInformationFillerTest {
         p.setValue(DnComponents.DNSNAME, 2, "server.bad.com");
         p.setValue(DnComponents.DNSNAME, 3, "server.superbad.com");
         
+        p.setUse(DnComponents.RFC822NAME,0,true);
+        p.setUse(DnComponents.RFC822NAME,1,true);
+        
         String san = "DNSNAME=foo.bar.com,DNSNAME=foo1.bar.com,RFC822NAME=foo@bar.com";
         EndEntityInformation user = new EndEntityInformation();
         user.setSubjectAltName(san);
@@ -659,6 +665,17 @@ public class EndEntityInformationFillerTest {
                                         EndEntityInformationFiller.SUBJECT_DN);
         assertEquals("CN=User Usersson,OU=Unit1,OU=Unit2,OU=Unit3,O=Org1,C=SE", dn2);
         
+    }
+    
+    @Test
+    public void testMergeDnForEmailInDistinguishedName() throws Exception {
+        Map<String, String> sdnMap = new HashMap<>();
+        sdnMap.put(DnComponents.DNEMAILADDRESS, "test@example.com");
+
+        String originalDn = "E=test@example.com,CN=example.com,OU=Wellcome Trust Sanger Institute,O=Genome Research Ltd.,L=ggdd,ST=STTsasad,C=GB";
+        String mergedDn = 
+                new DistinguishedName(originalDn).mergeDN(new DistinguishedName("CN=example.com"), true, sdnMap).toString();
+        assertEquals(originalDn, mergedDn);
     }
         
 }

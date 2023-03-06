@@ -223,6 +223,12 @@ public interface RaMasterApi {
      * @since Master RA API version 1 (EJBCA 6.8.0)
      */
     List<Role> getAuthorizedRoles(AuthenticationToken authenticationToken);
+    
+    /**
+     * @return a list with roles that the caller is a member of.
+     * @since Master RA API version 15 (EJBCA 7.11.0)
+     */
+    List<Role> getRolesAuthenticationTokenIsMemberOf(AuthenticationToken authenticationToken);
 
     /**
      * @return the Role with the given ID, or null if it does not exist
@@ -336,11 +342,12 @@ public interface RaMasterApi {
      * @throws ApprovalRequestExpiredException if the approval request is older than the configured expiry time
      * @throws AuthenticationFailedException if the authentication token couldn't be validated
      * @throws ApprovalException is thrown for other errors, such as the approval being in the wrong state, etc.
+     * @throws EndEntityExistsException  is thrown when the approval request can not be completed due to username conflict with an existing end entity
      * @since Initial RA Master API version (EJBCA 6.6.0)
      */
     boolean addRequestResponse(AuthenticationToken authenticationToken, RaApprovalResponseRequest requestResponse)
             throws AuthorizationDeniedException, ApprovalException, ApprovalRequestExpiredException, ApprovalRequestExecutionException,
-            AdminAlreadyApprovedRequestException, SelfApprovalException, AuthenticationFailedException;
+            AdminAlreadyApprovedRequestException, SelfApprovalException, AuthenticationFailedException, EndEntityExistsException;
 
     /**
      * Searches for approval requests.
@@ -365,6 +372,16 @@ public interface RaMasterApi {
      * @since RA Master API version 10 (EJBCA 7.4.2)
      */
     List<CertificateWrapper> searchForCertificateChain(AuthenticationToken authenticationToken, String fingerprint);
+
+    /**
+     * Searches for a certificate chain. Allows cross certificate chain to be specified based on root subjectDn SHA1 hash.
+     * If no matching cross chain with said root DN is found or the public key does not match the current CA key, then
+     * CA default certificate chain is returned.   
+     * 
+     * @return CertificateDataWrapper if it exists and the caller is authorized to see the data or null otherwise
+     * @since RA Master API version 15 (EJBCA 7.11.0)
+     */
+    List<CertificateWrapper> searchForCertificateChainWithPreferredRoot(AuthenticationToken authenticationToken, String fingerprint, String rootSubjectDnHash);
 
     /**
      * Searches for a certificate. If present locally, then the data (revocation status etc.) from the local database will be returned
@@ -682,6 +699,24 @@ public interface RaMasterApi {
      */
     byte[] enrollAndIssueSshCertificateWs(AuthenticationToken authenticationToken, UserDataVOWS userDataVOWS, SshRequestMessage sshRequestMessage)
             throws AuthorizationDeniedException, ApprovalException, EjbcaException, EndEntityProfileValidationException;
+
+    /**
+     * Enrolls a new end entity or updates it and creates an SSH certificate according to the profiles defined for that end entity
+     *
+     * @param authenticationToken an authentication token
+     * @param EndEntityInformation a object describing the end entity to be created
+     * @param sshRequestMessage a {@link SshRequestMessage} container with the request details
+     *
+     * @return an SSH encoded certificate
+     *
+     * @throws AuthorizationDeniedException if not authorized to create a certificate with the given CA or the profiles
+     * @throws EndEntityProfileValidationException if the certificate does not match the profiles.
+     * @throws EjbcaException if an EJBCA exception with an error code has occurred during the process, for example non-existent CA
+     * @throws ApprovalException if the request requires approval
+     * @since RA Master API version 15 (EJBCA 7.11.0)
+     */
+    byte[] enrollAndIssueSshCertificate(AuthenticationToken authenticationToken, EndEntityInformation endEntityInformation,
+            SshRequestMessage sshRequestMessage) throws AuthorizationDeniedException, EjbcaException, EndEntityProfileValidationException;
 
     /**
      * Generates a certificate. This variant is used from the REST Service interface.
@@ -1643,4 +1678,5 @@ public interface RaMasterApi {
      * @return renewed certificate
      */
     byte[] selfRenewCertificate(RaSelfRenewCertificateData renewCertificateData) throws AuthorizationDeniedException, EjbcaException, NoSuchEndEntityException, WaitingForApprovalException, CertificateSerialNumberException, EndEntityProfileValidationException, IllegalNameException, CADoesntExistsException;
+
 }

@@ -112,7 +112,9 @@
 								styleClass="help" style="font-size: smaller"/>
 						</h:panelGroup>
 							<br /><h:inputText value="#{acmeAliasConfigMBean.currentAlias.raNameGenPrefix}"
-								title="#{web.text.FORMAT_STRING}"
+
+							    title="#{web.text.FORMAT_STRING}"
+
 								disabled="#{!acmeAliasConfigMBean.currentAliasEditMode}" />
 							<br />
 						<h:panelGroup>
@@ -124,7 +126,9 @@
 							<br />
 						</h:panelGroup>
 						<h:inputText value="#{acmeAliasConfigMBean.currentAlias.raNameGenPostfix}"
-							title="#{web.text.FORMAT_STRING}"
+
+						    title="#{web.text.FORMAT_STRING}"
+
 							disabled="#{!acmeAliasConfigMBean.currentAliasEditMode}" />
 					</h:panelGroup>
 					
@@ -197,8 +201,10 @@
                     </h:panelGroup>
                     <h:panelGroup id="webUrl" >
                         <h:inputText  value="#{acmeAliasConfigMBean.currentAlias.urlTemplate}" size="45"
-                        title="#{web.text.FORMAT_URL}"
-                        rendered="#{acmeAliasConfigMBean.currentAliasEditMode}">
+
+                            title="#{web.text.FORMAT_URL}"
+                            rendered="#{acmeAliasConfigMBean.currentAliasEditMode}">
+
                             <f:validator validatorId="urlValidator"/>
                         </h:inputText>
                         <h:outputText value="#{acmeAliasConfigMBean.currentAlias.urlTemplate}" rendered="#{!acmeAliasConfigMBean.currentAliasEditMode}"/>
@@ -367,6 +373,26 @@
                                 <f:selectItems value="#{acmeAliasConfigMBean.availableApprovalProfiles}"/>
                             </h:selectOneMenu>
                         </h:panelGroup>
+                    </h:panelGroup>
+                    
+                    <h:panelGroup>
+                    	<h:outputLabel for="clientAuthenticationRequired" value="#{web.text.ACME_CLIENT_AUTHENTICATION_REQUIRED}" styleClass="titles"/>
+                    	<br />
+                    	<h:outputText value="#{web.text.ACME_CLIENT_AUTHENTICATION_REQUIRED_HELP}" styleClass="help" style="font-size: smaller"/>
+                    </h:panelGroup>
+                    <h:selectBooleanCheckbox id="clientAuthenticationRequired" value="#{acmeAliasConfigMBean.currentAlias.clientAuthenticationRequired}" disabled="#{!acmeAliasConfigMBean.currentAliasEditMode}" />
+                    
+                    <h:panelGroup>
+                    	<h:outputLabel for="preferredRootCaSubjectDnText" value="#{web.text.ACME_PREFERRED_ROOT_CA_SUBJECTDN}" styleClass="titles"/>
+                    	<br />
+                    	<h:outputText value="#{web.text.ACME_PREFERRED_ROOT_CA_SUBJECTDN_HELP}" styleClass="help" style="font-size: smaller"/>
+                    </h:panelGroup>
+                    <h:panelGroup>
+                    	<h:inputText id="preferredRootCaSubjectDnText" value="#{acmeAliasConfigMBean.currentAlias.preferredRootCaSubjectDn}" rendered="#{acmeAliasConfigMBean.currentAliasEditMode}" />
+                    	<h:outputText id="preferredRootCaSubjectDnText1" value="#{acmeAliasConfigMBean.currentAlias.preferredRootCaSubjectDn}" rendered="#{!acmeAliasConfigMBean.currentAliasEditMode}" />
+                    	<br/>
+                    	<h:outputText value="#{web.text.ACME_PREFERRED_ROOT_CA_SUBJECTDN_MISCONFIGURED}" styleClass="help" style="font-size: smaller; color: red"
+                    					rendered="#{!acmeAliasConfigMBean.currentAliasEditMode and acmeAliasConfigMBean.currentAlias.showMisconfiguredCrossRootError}"/>
                     </h:panelGroup>
                     
                     <h:panelGroup>

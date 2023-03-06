@@ -62,10 +62,6 @@ public abstract class CABase extends CABaseCommon implements Serializable, CA {
     // protected fields.
     private static final String FINISHUSER = "finishuser";
 
-    /**
-     * @deprecated since 6.8.0, replaced by the approvals Action:ApprovalProfile mapping
-     */
-    @Deprecated
     private static final String DO_ENFORCE_UNIQUE_PUBLIC_KEYS = "doEnforceUniquePublicKeys";
     private static final String DO_ENFORCE_KEY_RENEWAL = "doEnforceKeyRenewal";
     private static final String DO_ENFORCE_UNIQUE_DISTINGUISHED_NAME = "doEnforceUniqueDistinguishedName";
@@ -111,6 +107,7 @@ public abstract class CABase extends CABaseCommon implements Serializable, CA {
         setCRLOverlapTime(cainfo.getCRLOverlapTime());
         setDeltaCRLPeriod(cainfo.getDeltaCRLPeriod());
         setGenerateCrlUponRevocation(cainfo.isGenerateCrlUponRevocation());
+        setAllowChangingRevocationReason(cainfo.isAllowChangingRevocationReason());
 
         List<Integer> extendedservicetypes = new ArrayList<>();
         if (cainfo.getExtendedCAServiceInfos() != null) {
@@ -138,6 +135,7 @@ public abstract class CABase extends CABaseCommon implements Serializable, CA {
         data.put(CRLPERIOD, cainfo.getCRLPeriod());
         data.put(DELTACRLPERIOD, cainfo.getDeltaCRLPeriod());
         data.put(GENERATECRLUPONREVOCATION, cainfo.isGenerateCrlUponRevocation());
+        data.put(ALLOWCHANGINGREVOCATIONREASON, cainfo.isAllowChangingRevocationReason());
         data.put(CRLISSUEINTERVAL, cainfo.getCRLIssueInterval());
         data.put(CRLOVERLAPTIME, cainfo.getCRLOverlapTime());
         data.put(CRLPUBLISHERS, cainfo.getCRLPublishers());
@@ -221,6 +219,16 @@ public abstract class CABase extends CABaseCommon implements Serializable, CA {
     @Override
     public void setGenerateCrlUponRevocation(boolean generate) {
         data.put(GENERATECRLUPONREVOCATION, generate);
+    }
+
+    @Override
+    public boolean getAllowChangingRevocationReason() {
+        return getBoolean(ALLOWCHANGINGREVOCATIONREASON, false);
+    }
+
+    @Override
+    public void setAllowChangingRevocationReason(boolean allow) {
+        data.put(ALLOWCHANGINGREVOCATIONREASON, allow);
     }
 
     @Override

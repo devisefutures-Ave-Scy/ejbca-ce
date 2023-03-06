@@ -1338,8 +1338,8 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
     
     @Override
     public OcspResponseInformation getOcspResponse(final byte[] request, final X509Certificate[] requestCertificates, String remoteAddress,
-            String xForwardedFor, StringBuffer requestUrl, final AuditLogger auditLogger, final TransactionLogger transactionLogger, boolean isPreSigning, 
-            boolean issueFinalResponse)
+            String xForwardedFor, StringBuffer requestUrl, final AuditLogger auditLogger, final TransactionLogger transactionLogger,
+            boolean isPreSigning, boolean issueFinalResponse, boolean includeExpiredCertificates)
             throws MalformedRequestException, OCSPException {
         //Check parameters
         if (auditLogger == null) {
@@ -1669,12 +1669,6 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                 final List<String> extensionOids = ocspSigningCacheEntry.getOcspKeyBinding() != null
                         ? ocspSigningCacheEntry.getOcspKeyBinding().getOcspExtensions()
                         : new ArrayList<>();
-                
-                // Intended for debugging. Will usually be null
-                String alwaysUseOid = OcspConfiguration.getAlwaysSendCustomOCSPExtension();
-                if (alwaysUseOid != null && !extensionOids.contains(alwaysUseOid)) {
-                    extensionOids.add(alwaysUseOid);
-                }
                                 
                 if (signerIssuerCertStatus.equals(CertificateStatus.REVOKED)) {
                     /*
@@ -1725,7 +1719,7 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                         certificateStatusHolder = certificateStoreSession.getCertificateAndStatus(issuerDnOcspRequest, certId.getSerialNumber());
                         status = certificateStatusHolder.getCertificateStatus();
                     }
-                    if(status.getExpirationDate()<System.currentTimeMillis() && isPreSigning) {
+                    if(status.getExpirationDate()<System.currentTimeMillis() && isPreSigning && !includeExpiredCertificates) {
                         return null; // do not store response for expired certificates
                     }
                     if (!isPreSigning && transactionLogger.isEnabled()) {
@@ -1879,46 +1873,30 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                 }
  
                 for (String oidstr : extensionOids) {
-                    boolean useAlways = false;
-                    if (oidstr.equals(alwaysUseOid)) {
-                        useAlways = true;
-                    }
-                    ASN1ObjectIdentifier oid = new ASN1ObjectIdentifier(oidstr);
-                    Extension extension = null;
-                    if (!useAlways && req.hasExtensions()) {
-                        // Only check if extension exists if we are not already bound to use it
-                            extension = req.getExtension(oid);
-                    }
-                    //If found, or if it should be used anyway
-                    if (useAlways || extension!=null) {
-                        // We found an extension, call the extension class
-                        if (log.isDebugEnabled()) {
-                            log.debug("Found OCSP extension oid: " + oidstr);
-                        }
-                        OCSPExtension extObj = OcspExtensionsCache.INSTANCE.getExtensions().get(oidstr);
-                        // Find the certificate from the certId
-                        if (extObj != null && certificateStatusHolder != null && certificateStatusHolder.getCertificate() != null) {
-                            X509Certificate cert = (X509Certificate) certificateStatusHolder.getCertificate();
-                            // From EJBCA 6.2.10 and 6.3.2 the extension must perform the reverse DNS lookup by itself if needed.
-                            final String remoteHost = remoteAddress;
-                            // Call the OCSP extension
-                            Map<ASN1ObjectIdentifier, Extension> retext = null;
-                            retext = extObj.process(requestCertificates, remoteAddress, remoteHost, cert, certStatus,
-                                    ocspSigningCacheEntry.getOcspKeyBinding());
-                            if (retext != null) {
-                                // Add the returned X509Extensions to the responseExtension we will add to the basic OCSP response
-                                if (extObj.getExtensionType().contains(OCSPExtensionType.RESPONSE)) {
-                                    responseExtensions.putAll(retext);
-                                }
-                                if (extObj.getExtensionType().contains(OCSPExtensionType.SINGLE_RESPONSE)) {
-                                    respItem.addExtensions(retext);
-                                }
-                            } else {
-                                log.error(intres.getLocalizedMessage("ocsp.errorprocessextension", extObj.getClass().getName(),
-                                        extObj.getLastErrorCode()));
+                    OCSPExtension extObj = OcspExtensionsCache.INSTANCE.getExtensions().get(oidstr);
+                    // Find the certificate from the certId
+                    if (extObj != null && certificateStatusHolder != null && certificateStatusHolder.getCertificate() != null) {
+                        X509Certificate cert = (X509Certificate) certificateStatusHolder.getCertificate();
+                        // From EJBCA 6.2.10 and 6.3.2 the extension must perform the reverse DNS lookup by itself if needed.
+                        final String remoteHost = remoteAddress;
+                        // Call the OCSP extension
+                        Map<ASN1ObjectIdentifier, Extension> retext = null;
+                        retext = extObj.process(requestCertificates, remoteAddress, remoteHost, cert, certStatus,
+                                ocspSigningCacheEntry.getOcspKeyBinding());
+                        if (retext != null) {
+                            // Add the returned X509Extensions to the responseExtension we will add to the basic OCSP response
+                            if (extObj.getExtensionType().contains(OCSPExtensionType.RESPONSE)) {
+                                responseExtensions.putAll(retext);
                             }
+                            if (extObj.getExtensionType().contains(OCSPExtensionType.SINGLE_RESPONSE)) {
+                                respItem.addExtensions(retext);
+                            }
+                        } else {
+                            log.error(
+                                    intres.getLocalizedMessage("ocsp.errorprocessextension", extObj.getClass().getName(), extObj.getLastErrorCode()));
                         }
                     }
+
                 }
                 responseList.add(respItem);
             }
@@ -2315,7 +2293,7 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
     }
     
     @Override
-    public void preSignOcspResponse(X509Certificate cacert, final BigInteger serialNr, boolean issueFinalResponse, String certIDHashAlgorithm) {
+    public void preSignOcspResponse(X509Certificate cacert, final BigInteger serialNr, boolean issueFinalResponse, boolean includeExpiredCertificates, String certIDHashAlgorithm) {
         final OCSPReq req;
         final OCSPReqBuilder gen = new OCSPReqBuilder();
         final int localTransactionId = TransactionCounter.INSTANCE.getTransactionNumber();
@@ -2334,7 +2312,7 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
 
             gen.addRequest(certId);
             req = gen.build();
-            getOcspResponse(req.getEncoded(), null, remoteAddress, null, null, auditLogger, transactionLogger, true, issueFinalResponse);
+            getOcspResponse(req.getEncoded(), null, remoteAddress, null, null, auditLogger, transactionLogger, true, issueFinalResponse, includeExpiredCertificates);
         } catch (Throwable e) {
             final String errMsg = intres.getLocalizedMessage("ocsp.errorprocessreq", e.getMessage());
             log.info(errMsg);

@@ -12,10 +12,13 @@
  *************************************************************************/
 package org.ejbca.core.model.era;
 
+import java.util.List;
+
 import javax.ejb.Remote;
 
 import org.cesecore.authentication.tokens.AuthenticationToken;
 import org.cesecore.authorization.AuthorizationDeniedException;
+import org.cesecore.certificates.certificate.CertificateWrapper;
 import org.cesecore.certificates.endentity.EndEntityInformation;
 import org.ejbca.core.EjbcaException;
 import org.ejbca.core.model.approval.ApprovalException;
@@ -23,6 +26,7 @@ import org.ejbca.core.model.approval.WaitingForApprovalException;
 import org.ejbca.core.model.ra.raadmin.EndEntityProfileValidationException;
 import org.ejbca.core.protocol.NoSuchAliasException;
 import org.ejbca.core.protocol.cmp.CmpMessageDispatcherSessionLocal;
+import org.ejbca.core.protocol.ssh.SshRequestMessage;
 import org.ejbca.core.protocol.ws.objects.UserDataVOWS;
 
 /**
@@ -37,7 +41,23 @@ public interface TestRaMasterApiProxySessionRemote {
      * Used in tests, to test "remote" peer connections to localhost.
      */
     void deferLocalForTest();
-    
+
+    /** Causes the function name, and local/remote status, of each called RaMasterApi function to be logged */
+    void enableFunctionTracingForTest();
+
+    /** Restores the changed made by enableFunctionTracingForTest. Simply does nothing if there is nothing to restore */
+    void restoreFunctionTracingAfterTest();
+
+    /**
+     * Returns the list of called functions and local/remote status. Syntax example:
+     *
+     * <pre>
+     * isAuthorizedNoLogging|local
+     * isAuthorizedNoLogging|remote
+     * </pre>
+     */
+    List<String> getFunctionTraceForTest();
+
     /**
      * Adds (end entity) user.
      * @param admin authentication token
@@ -91,5 +111,17 @@ public interface TestRaMasterApiProxySessionRemote {
     byte[] createCertificateWS(final AuthenticationToken authenticationToken, final UserDataVOWS userdata, final String requestData, final int requestType,
             final String responseType) throws AuthorizationDeniedException, ApprovalException, EjbcaException,
             EndEntityProfileValidationException;
+    
+    byte[] createCertificate(AuthenticationToken authenticationToken, EndEntityInformation endEntityInformation)
+            throws AuthorizationDeniedException, EjbcaException;
+    
+    byte[] enrollAndIssueSshCertificate(final AuthenticationToken authenticationToken, final EndEntityInformation endEntity,
+            final SshRequestMessage sshRequestMessage)
+            throws AuthorizationDeniedException, EjbcaException, EndEntityProfileValidationException;
+
+    RaCertificateSearchResponse searchForCertificates(AuthenticationToken authenticationToken, RaCertificateSearchRequest raCertificateSearchRequest);
+
+    List<CertificateWrapper> searchForCertificateChainWithPreferredRoot(AuthenticationToken authenticationToken, String fingerprint,
+            String rootSubjectDnHash);
     
 }
