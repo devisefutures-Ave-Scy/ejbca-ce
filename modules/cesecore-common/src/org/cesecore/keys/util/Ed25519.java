@@ -27,11 +27,10 @@ import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x509.TBSCertificate;
 import org.bouncycastle.asn1.x509.Time;
 import org.bouncycastle.asn1.x509.V3TBSCertificateGenerator;
-import org.ejbca.cvc.example.GenerateCert;
+import org.hibernate.sql.Alias;
 import org.pkcs11.jacknji11.C;
 import org.pkcs11.jacknji11.CKA;
 import org.pkcs11.jacknji11.CKC;
-import org.pkcs11.jacknji11.CKK;
 import org.pkcs11.jacknji11.CKM;
 import org.pkcs11.jacknji11.CKO;
 import org.pkcs11.jacknji11.CKR;
@@ -43,15 +42,14 @@ import org.pkcs11.jacknji11.LongRef;
 
 public class Ed25519 {
     private final static Logger log = Logger.getLogger(Ed25519.class);
-    //private static byte[] USER_PIN = "1234".getBytes();
-    //private static long INITSLOT = 3;
 
     private static HashMap<String,HsmInformation> hsmInfoCache = new HashMap<String,HsmInformation>();
 
     /**
-     * Generates a keypair using jacknji11 C implementation
+     * Generates a keypair using jacknji11 implementation
      * 
      * @param keyAlias    key alias
+     * @param providerName Name of the current provider
      * @return 
      * @throws IOException
      * @throws CertificateException
@@ -61,27 +59,11 @@ public class Ed25519 {
 
         HsmInformation hsmInfo = hsmInfoCache.get(providerName);
         LongRef sessionRef = hsmInfo.getSessionRef();
-       
-        /* 
-        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
-        C.Initialize();
-
-        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
-        C.Login(sessionRef.value, CKU.USER, USER_PIN);
-        */
 
         // Generate Ed25519 key pair
         LongRef pubKey = new LongRef();
         LongRef privKey = new LongRef();
         generateKeyPairEd25519(sessionRef.value(), pubKey, privKey, keyAlias);
-        
-        log.info(String.format(
-                        "testKeyPairEd25519: edwards25519 keypair generated. PublicKey handle: %d, PrivKey handle: %d",
-                        pubKey.value(), privKey.value()));
-
-        //PrivateKey  priv = hsmPrivKey.getInstance(privKey.value(), "Ed25519", p);
-
-        //setPrivate(priv);
         
         return generateSelfCertificate(sessionRef, pubKey, privKey, keyAlias, hsmInfo);
     }
@@ -93,6 +75,7 @@ public class Ed25519 {
      * @param session    the session's handle
      * @param publicKey  gets handle of new public key
      * @param privateKey gets handle of new private key
+     * @param keyalias the alias for the new key
      */
     private void generateKeyPairEd25519(long session, LongRef publicKey, LongRef privateKey, String keyalias) {
         // Attributes from PKCS #11 Cryptographic Token Interface Current Mechanisms
@@ -126,9 +109,25 @@ public class Ed25519 {
                         new CKA(CKA.LABEL, (keyalias + "-private").getBytes()),
                         new CKA(CKA.ID, keyalias.getBytes()),
         };
-        C.GenerateKeyPair(session, new CKM(CKM.ECDSA_KEY_PAIR_GEN), pubTempl, privTempl, publicKey, privateKey);
+        long rv = C.GenerateKeyPair(session, new CKM(CKM.ECDSA_KEY_PAIR_GEN), pubTempl, privTempl, publicKey, privateKey);
+        if (rv != CKR.OK) throw new CKRException(rv);
+        
+        log.info("Generated KeyPair with alias: " + keyalias);
     }
 
+    /**
+     * Generates the EJBCA self certificate so keys can be recognized.
+     * 
+     * @param sessionRef LongRef to the session
+     * @param pubKey Public key of the alias
+     * @param privKey Private key of the alias 
+     * @param keyAlias Key Alias
+     * @param hsmInfo Cache info
+     * @return The X509 Certificate
+     * @throws IOException
+     * @throws CertificateException
+     * @throws InvalidKeyException
+     */
     private static X509Certificate generateSelfCertificate(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias, HsmInformation hsmInfo) throws InvalidKeyException, IOException, CertificateException{
 
         final long currentTime = new Date().getTime();
@@ -152,13 +151,16 @@ public class Ed25519 {
             new CKA(CKA.EC_PARAMS)
          };
          
-        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
         // allocate memory and call again
         for (int i = 0; i < templ.length; i++){
             templ[i].pValue = new byte[(int) templ[i].ulValueLen];
         }
         //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
-        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        long rv2 = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+        
         final CKA ecPoint = templ[0];
         
         certGen.setIssuer(issuer);
@@ -174,8 +176,6 @@ public class Ed25519 {
         // generate certificate
         TBSCertificate tbsCert = certGen.generateTBSCertificate();
 
-        log.info(String.format("testCertificateEd25519: Certificate:\n%s", Hex.b2s(tbsCert.getEncoded())));
-
         ByteArrayOutputStream bOut = new ByteArrayOutputStream();
         ASN1OutputStream dOut = ASN1OutputStream.create(bOut);
         dOut.writeObject(tbsCert);
@@ -183,12 +183,17 @@ public class Ed25519 {
         byte[] certBlock = bOut.toByteArray();
 
         // since the algorythm is Ed25519 there's no need to create a digest.
-        C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
+        long rv3 = C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
+        if (rv3 != CKR.OK) throw new CKRException(rv3);
 
         LongRef length = new LongRef();
-        C.Sign(sessionRef.value(), certBlock, null, length);
+        long rv4 = C.Sign(sessionRef.value(), certBlock, null, length);
+        if (rv4 != CKR.OK) throw new CKRException(rv4);
+
         byte[] result = new byte[(int) length.value()];
-        C.Sign(sessionRef.value(), certBlock, result, length);
+        long rv5 = C.Sign(sessionRef.value(), certBlock, result, length);
+        if (rv5 != CKR.OK) throw new CKRException(rv5);
+
         byte[] signature = resize(result, (int) length.value());
 
         ASN1EncodableVector v = new ASN1EncodableVector();
@@ -215,60 +220,67 @@ public class Ed25519 {
             new CKA(CKA.ID, keyAlias),
             new CKA(CKA.VALUE, cert.getEncoded())
         };
-        C.CreateObject(sessionRef.value(), certTemplate, certRef);
+        long rv6 = C.CreateObject(sessionRef.value(), certTemplate, certRef);
+        if (rv6 != CKR.OK) throw new CKRException(rv6);
 
         updateKeypairCache(keyAlias, hsmInfo);
+
+        log.info("Self Certificate created for alias: " + keyAlias);
 
         return cert;
     }
     
+
+    /**
+     * Signs data with jacknji11 hsm implementation
+     * 
+     * @param alias Key Alias
+     * @param data data to sign
+     * @param providerName Name of current provider
+     * @return signed data 
+     * @throws IOException
+     * @throws CertificateException
+     * @throws InvalidKeyException
+     */
 
     public byte[] sign(String alias, byte[] data, String providerName){
 
         HsmInformation hsmInfo = hsmInfoCache.get(providerName);
         LongRef sessionRef = hsmInfo.getSessionRef();
         updateKeypairCache(alias, hsmInfo);
-
-        /* 
-        LongRef sessionRef = new LongRef();
-       
-        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
-        C.Initialize();
-
-        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
-        C.Login(sessionRef.value, CKU.USER, USER_PIN);
-        */
-
+        
         LongRef privKey = hsmInfo.KeyPairCache.get(alias).getPrivKey();
 
         // since the algorythm is Ed25519 there's no need to create a digest.
-        C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
+        long rv = C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
+        if (rv != CKR.OK) throw new CKRException(rv);
 
         LongRef length = new LongRef();
-        C.Sign(sessionRef.value(), data, null, length);
+        long rv2 = C.Sign(sessionRef.value(), data, null, length);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
         byte[] result = new byte[(int) length.value()];
-        C.Sign(sessionRef.value(), data, result, length);
+        long rv3 = C.Sign(sessionRef.value(), data, result, length);
+        if (rv3 != CKR.OK) throw new CKRException(rv3);
 
-        log.info("Signature Done");
+        log.info("Signed with: " + alias);
 
         return result;
     }
 
+    /**
+     * Removes a keypair from HSM and Cache
+     * 
+     * @param alias Key Alias
+     * @param providerName Name of current provider
+     * @return 
+     * @throws IOException
+     * @throws CertificateException
+     * @throws InvalidKeyException
+     */
     public static void removeKeyPair(String alias, String providerName){
 
         HsmInformation hsmInfo = hsmInfoCache.get(providerName);
         LongRef sessionRef = hsmInfo.getSessionRef();
-
-
-        /* 
-        LongRef sessionRef = new LongRef();
-       
-        C.NATIVE = new org.pkcs11.jacknji11.jna.JNA("/etc/utimaco/libcs2_pkcs11.so");
-        C.Initialize();
-
-        C.OpenSession(INITSLOT, CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
-        C.Login(sessionRef.value, CKU.USER, USER_PIN);
-        */
 
         if(!hsmInfo.KeyPairCache.containsKey(alias)){
             updateKeypairCache(alias,hsmInfo);
@@ -287,22 +299,41 @@ public class Ed25519 {
         long rv3 = C.DestroyObject(sessionRef.value(), certificate.value());
         if (rv3 != CKR.OK) throw new CKRException(rv3);
         hsmInfo.KeyPairCache.remove(alias);
+        
+        log.info("Removed KeyPair: " + alias);
     }
 
+    /**
+     * Initializes and fills Token Cache
+     * 
+     * @param tokenName Name of the token
+     * @param slotLabel slot of the token
+     * @param authCode authentication code
+     * @param sharedLibrary library path 
+     * @param providerName Name of token provider
+     * @return Cache instance
+     * @throws IOException
+     * @throws CertificateException
+     * @throws InvalidKeyException
+     */
     public static HsmInformation updateHsmInfoCache(String providerName, String tokenName, String slotLabel, String authCode, String sharedLibrary){
         if(hsmInfoCache.containsKey(providerName)){
             HsmInformation hsmInf = hsmInfoCache.get(providerName);
             if(!(hsmInf.authcode.equals(authCode))){
-                C.CloseSession(hsmInf.getSessionRef().value());
+                long rv = C.CloseSession(hsmInf.getSessionRef().value());
+                if (rv != CKR.OK) throw new CKRException(rv);
                 hsmInf.setAuthCode(authCode);
 
                 LongRef sessionRef = new LongRef();
         
                 C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
-                C.Initialize();
+                long rv2 = C.Initialize();
+                if (rv2 != CKR.OK && rv2 != CKR.CRYPTOKI_ALREADY_INITIALIZED) throw new CKRException(rv2);
 
-                C.OpenSession(Long.parseLong(slotLabel), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
-                C.Login(sessionRef.value, CKU.USER, authCode.getBytes());
+                long rv3 = C.OpenSession(Long.parseLong(slotLabel), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+                if (rv3 != CKR.OK) throw new CKRException(rv3);
+                long rv4 = C.Login(sessionRef.value, CKU.USER, authCode.getBytes());
+                if (rv4 != CKR.OK && rv4 != CKR.USER_ALREADY_LOGGED_IN) throw new CKRException(rv4);
 
                 hsmInf.setSessionRef(sessionRef);
 
@@ -316,10 +347,13 @@ public class Ed25519 {
             LongRef sessionRef = new LongRef();
         
             C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
-            C.Initialize();
+            long rv5 = C.Initialize();
+            if (rv5 != CKR.OK && rv5 != CKR.CRYPTOKI_ALREADY_INITIALIZED) throw new CKRException(rv5);
 
-            C.OpenSession(Long.parseLong(slotLabel), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
-            C.Login(sessionRef.value, CKU.USER, authCode.getBytes());
+            long rv6 = C.OpenSession(Long.parseLong(slotLabel), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+            if (rv6 != CKR.OK) throw new CKRException(rv6);
+            long rv7 = C.Login(sessionRef.value, CKU.USER, authCode.getBytes());
+            if (rv7 != CKR.OK && rv7 != CKR.USER_ALREADY_LOGGED_IN) throw new CKRException(rv7);
 
             HsmInformation inf = new HsmInformation(authCode, slotLabel, tokenName, sessionRef, sharedLibrary);
             hsmInfoCache.put(providerName, inf);
@@ -327,6 +361,17 @@ public class Ed25519 {
         }
     }
 
+    /**
+     * Changes name of token in Cache
+     * 
+     * @param providerName Name of current provider
+     * @param oldTokenName Old Name to be changed
+     * @param newTokenName New Name 
+     * @return 
+     * @throws IOException
+     * @throws CertificateException
+     * @throws InvalidKeyException
+     */
     public static void updateCachedName(String providerName, String oldTokenName, String newTokenName) {
         HsmInformation hsmInf = hsmInfoCache.get(providerName);
         if(!hsmInf.tokenName.contains(newTokenName)){
@@ -335,6 +380,16 @@ public class Ed25519 {
         }
     }
 
+    /**
+     * Removes a token from Cache
+     * 
+     * @param tokenName Name of the token
+     * @param providerName Name of provider
+     * @return 
+     * @throws IOException
+     * @throws CertificateException
+     * @throws InvalidKeyException
+     */
     public static void removeTokenFromCache(String providerName, String tokenName){
         HsmInformation hsmInf = hsmInfoCache.get(providerName);
 
@@ -347,6 +402,16 @@ public class Ed25519 {
 
     }
 
+    /**
+     * Updates the Cache with keypairs
+     * 
+     * @param alias Key Alias
+     * @param hsmCache Cache
+     * @return 
+     * @throws IOException
+     * @throws CertificateException
+     * @throws InvalidKeyException
+     */
     public static void updateKeypairCache(String alias, HsmInformation hsmCache){
         if(!hsmCache.KeyPairCache.containsKey(alias)){
             LongRef privateKey = getPrivateKeyRef(alias, hsmCache.getSessionRef());
@@ -363,15 +428,19 @@ public class Ed25519 {
     /**
      * Gets the LongRef of a Private Key through it's alias.
      * @param alias alias
+     * @param sessionRef Ref of the C session
      * @return LongRef of Private Key
      */
     public static LongRef getPrivateKeyRef(String alias, LongRef sessionRef){
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
         CKA[] templ = new CKA[] {new CKA(CKA.LABEL, alias + "-private" )};
-        C.FindObjectsInit(sessionRef.value(), templ);
-        C.FindObjects(sessionRef.value(), result, objectCount);
-        C.FindObjectsFinal(sessionRef.value());
+        long rv = C.FindObjectsInit(sessionRef.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
+        long rv2 = C.FindObjects(sessionRef.value(), result, objectCount);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+        long rv3 = C.FindObjectsFinal(sessionRef.value());
+        if (rv3 != CKR.OK) throw new CKRException(rv3);
 
         LongRef privKey = new LongRef(result[0]);
         return privKey;
@@ -379,17 +448,21 @@ public class Ed25519 {
     }
 
     /**
-     * Gets the LongRef of a Public Key through it's alias.
+     * Gets the LongRef of a Certificate through it's alias.
      * @param alias alias
-     * @return LongRef of Public Key
+     * @param sessionRef Ref of the C session
+     * @return LongRef of Certificate
      */
     public static LongRef getCertificateRef(String alias, LongRef sessionRef){
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
         CKA[] templ = new CKA[] {new CKA(CKA.LABEL, alias)};
-        C.FindObjectsInit(sessionRef.value(), templ);
-        C.FindObjects(sessionRef.value(), result, objectCount);
-        C.FindObjectsFinal(sessionRef.value());
+        long rv = C.FindObjectsInit(sessionRef.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
+        long rv2 = C.FindObjects(sessionRef.value(), result, objectCount);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+        long rv3 = C.FindObjectsFinal(sessionRef.value());
+        if (rv3 != CKR.OK) throw new CKRException(rv3);
 
         LongRef certificate = new LongRef(result[0]);
         return certificate;
@@ -398,8 +471,8 @@ public class Ed25519 {
      /**
      * Gets the Id through public key LongRef.
      * @param LongRef pubKey
-     * @param LongRef sessionRef
-     * @return Byte[] id
+     * @param sessionRef Ref of the C session
+     * @return String id
      */
     public static String getID(LongRef pubKey, LongRef sessionRef){
 
@@ -407,29 +480,35 @@ public class Ed25519 {
             new CKA(CKA.ID),
          };
          
-        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
         // allocate memory and call again
         for (int i = 0; i < templ.length; i++){
             templ[i].pValue = new byte[(int) templ[i].ulValueLen];
         }
         //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
-        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        long rv2 = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
         final CKA id = templ[0];
         return id.getValueStr();
     }
 
     /**
-     * Gets the LongRef of a Certificate through it's alias.
+     * Gets the LongRef of a Public Key through it's alias.
      * @param alias alias
-     * @return LongRef of Certificate
+     * @param sessionRef Ref of the C session
+     * @return LongRef of Public Key
      */
     public static LongRef getPublicKeyRef(String alias, LongRef sessionRef){
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
         CKA[] templ = new CKA[] {new CKA(CKA.LABEL, alias + "-public")};
-        C.FindObjectsInit(sessionRef.value(), templ);
-        C.FindObjects(sessionRef.value(), result, objectCount);
-        C.FindObjectsFinal(sessionRef.value());
+        long rv = C.FindObjectsInit(sessionRef.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
+        long rv2 = C.FindObjects(sessionRef.value(), result, objectCount);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+        long rv3 = C.FindObjectsFinal(sessionRef.value());
+        if (rv3 != CKR.OK) throw new CKRException(rv3);
 
         LongRef pubKey = new LongRef(result[0]);
         return pubKey;
@@ -548,6 +627,11 @@ public class Ed25519 {
 
     }
 
+    /**
+     * Fixes keys without certificate so they can be seen by EJBCA. The keys need to follow the format alias-private and alias-public for it to work.
+     * @param providerName Name of the provider
+     * @return
+     */
     public static void noCertFix(String providerName){
 
         List<String> aliasList = new ArrayList<String>();
@@ -623,6 +707,18 @@ public class Ed25519 {
 
     }
 
+    /**
+     * Copy of generateSelfCertificate above but used only for fixing certificates so it can have same IDs
+     * @param sessionRef LongRef to the session
+     * @param pubKey Public key of the alias
+     * @param privKey Private key of the alias 
+     * @param keyAlias Key Alias
+     * @param hsmInfo Cache info
+     * @return The X509 Certificate
+     * @throws IOException
+     * @throws CertificateException
+     * @throws InvalidKeyException
+     */
     private static X509Certificate generateSelfCertificateFix(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias, HsmInformation hsmInfo, String id) throws InvalidKeyException, IOException, CertificateException{
 
         final long currentTime = new Date().getTime();
@@ -646,13 +742,15 @@ public class Ed25519 {
             new CKA(CKA.EC_PARAMS)
          };
          
-        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
         // allocate memory and call again
         for (int i = 0; i < templ.length; i++){
             templ[i].pValue = new byte[(int) templ[i].ulValueLen];
         }
         //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
-        C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        long rv2 = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
         final CKA ecPoint = templ[0];
         
         certGen.setIssuer(issuer);
@@ -668,8 +766,6 @@ public class Ed25519 {
         // generate certificate
         TBSCertificate tbsCert = certGen.generateTBSCertificate();
 
-        log.info(String.format("testCertificateEd25519: Certificate:\n%s", Hex.b2s(tbsCert.getEncoded())));
-
         ByteArrayOutputStream bOut = new ByteArrayOutputStream();
         ASN1OutputStream dOut = ASN1OutputStream.create(bOut);
         dOut.writeObject(tbsCert);
@@ -677,12 +773,15 @@ public class Ed25519 {
         byte[] certBlock = bOut.toByteArray();
 
         // since the algorythm is Ed25519 there's no need to create a digest.
-        C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
+        long rv3 = C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
+        if (rv3 != CKR.OK) throw new CKRException(rv3);
 
         LongRef length = new LongRef();
-        C.Sign(sessionRef.value(), certBlock, null, length);
+        long rv4 = C.Sign(sessionRef.value(), certBlock, null, length);
+        if (rv4 != CKR.OK) throw new CKRException(rv4);
         byte[] result = new byte[(int) length.value()];
-        C.Sign(sessionRef.value(), certBlock, result, length);
+        long rv5 = C.Sign(sessionRef.value(), certBlock, result, length);
+        if (rv5 != CKR.OK) throw new CKRException(rv5);
         byte[] signature = resize(result, (int) length.value());
 
         ASN1EncodableVector v = new ASN1EncodableVector();
@@ -709,7 +808,8 @@ public class Ed25519 {
             new CKA(CKA.ID, id),
             new CKA(CKA.VALUE, cert.getEncoded())
         };
-        C.CreateObject(sessionRef.value(), certTemplate, certRef);
+        long rv6 = C.CreateObject(sessionRef.value(), certTemplate, certRef);
+        if (rv6 != CKR.OK) throw new CKRException(rv6);
 
         updateKeypairCache(keyAlias, hsmInfo);
 

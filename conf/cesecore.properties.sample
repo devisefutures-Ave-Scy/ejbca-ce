@@ -220,6 +220,85 @@ securityeventsaudit.exporter.1=org.cesecore.audit.impl.AuditExporterXml
 # Default: not set
 #cluster.nodeid=
 
+#### Export events to XML log file 
+
+# + The security audit logs shall be periodically extracted to a log file, in XML format.
+# + The path of the security audit log file shall be configurable. The name of the security audit log file shall be auditlogfile_N.log, 
+#   where N is the sequence number of the last log (event with the highest sequential number) in the audit log file.
+# + The specified time frequency at which the security audit log is extracted to a log file shall be configurable.
+# + The security extracted audit logs shall include all the new security audit logs since the last extracted security audit logs.
+# + The security audit log extraction event shall be included in the audit log (with the extracted initial and final log sequence 
+# number in the details).
+
+#
+# Enable the extraction of the security audit events to the XML log file
+# Default: true
+securityeventsaudit.xmlexporter.enable=true
+#
+# Path of the security audit log file
+# Default: /tmp/ (don't use this default in production environment, since /tmp will be erased every time the the server is (re)booted)
+securityeventsaudit.xmlexporter.path_log=/tmp/
+#
+# Time frequency (in minutes) at which the security audit log is extracted
+# Default: 30
+securityeventsaudit.xmlexporter.timermin=30
+
+
+#### Security audit log signature - sign the XML log file
+
+# + The security audit logs shall be periodically signed by EJBCA and extracted to a log file, in XML format.
+# + The signature uses the CMS (Cryptographic Message Syntax ) format (based on PKCS#7), as available in EJBCA for extracting 
+#   signed security audit logs.
+# + It is necessary to configure the CA that will be used to sign the security audit logs
+# + The path of the signed security audit log file shall be configurable. The name of the signed security audit log file shall be 
+#   ''auditlogfile_N.p7m'', where N is the sequence number of the last log (event with the highest sequential number) in the audit
+#   log file. 
+# + The specified time frequency at which the security audit log is signed and extracted to a log file shall be configurable.
+# + The signed security audit log file shall always be extracted, when the CA that will be used to sign the security audit logs 
+#   is configured.
+
+#
+# Path of the signed security audit log file
+# Default: /tmp/ (don't use this default in production environment, since /tmp will be erased every time the the server is (re)booted)
+securityeventsaudit.xmlexporter.path_cms=/tmp/
+#
+# ID of the CA used to sign (CMS format) the security audit logs. 
+# For activating the CMS service of the CA, go to the admin Web and choose "Certification Authorities". Select the CA that will be 
+# used to sign and "Edit CA". Activate the "CMS Service" and "Save". Return to the page and validate if the "CMS Service" is 
+# activated. The ID of the CA is the "CA ID" on top of the page.  
+# Default: Signing CA is unconfigured
+#securityeventsaudit.xmlexporter.ca=
+#
+# Time frequency (in minutes) at which the security audit log is signed
+# Default: 15
+securityeventsaudit.xmlexporter.signtimermin=15
+
+
+#### Database Integrity Protection
+
+# + Periodically an audit log signing event shall be created, in which it computes a digital signature, hash, keyed hash, or authentication 
+#   code over the entries in the audit log.
+# + The specified frequency at which the audit log signing event occurs shall be configurable.
+# + The digital signature, hash, keyed hash, or authentication code shall be computed over, at least, every entry that has been added to 
+#   the audit log since the previous audit log signing event (including the previous audit log signing event).
+# + The digital signature, hash, keyed hash, or authentication code from the audit log signing event shall be included in the audit 
+#   log (with the extracted initial and final log sequence number in the details).
+
+# 
+# Type of computation of the audit log signing event. Possible values: hash
+# Default: Do not enable the audit log signing event
+#securityeventsaudit.xmlexporter.dip=
+#
+# Hash algorithms to use (when securityeventsaudit.xmlexporter.dip=hash). Possible values: SHA-256, SHA-512
+# Default: SHA-256
+securityeventsaudit.xmlexporter.diphash=SHA-256
+#
+# Time frequency (in minutes) at which the audit log signing event is performed
+# Default: 5
+securityeventsaudit.xmlexporter.diptimermin=5
+
+
+
 #------------------- ECDSA implicitlyCA settings -------------
 # Sets pre-defined EC curve parameters for the implicitlyCA facility.
 # See the User's Guide for more information about the implicitlyCA facility.
@@ -331,6 +410,12 @@ securityeventsaudit.exporter.1=org.cesecore.audit.impl.AuditExporterXml
 # we need some configuration option to force old behavior in new versions, until we have upgrade
 # all nodes and can set the system to use new (improved) behavior.
 
+# When upgrading a 100% up-time cluster, all nodes should be deployed with db.keepjbossserialization=true.
+# For upgrades from EJBCA version 4.0 to later versions.
+# Once all nodes are running > 4.0, set to false to increase efficiency and portability.
+# Default: false
+#db.keepjbossserialization=true
+
 # Option if we should keep internal CA keystores in the CAData table to be compatible with CeSecore 1.1/EJBCA 5.0.
 # Default to false in defaultvalues.properties, true if no value is present there. Set to false when all nodes in a cluster have been upgraded to CeSecore 1.2/EJBCA 5.1 or later,
 # then internal keystore in CAData will be replaced with a foreign key in to the migrated entry in CryptotokenData.
@@ -357,3 +442,16 @@ securityeventsaudit.exporter.1=org.cesecore.audit.impl.AuditExporterXml
 # Set to true to keep the implementation used by EJBCA <7.5 and encrypt certificates in PKCS#12 keystores using
 # pbeWithSHA1And40BitRC2-CBC instead of pbeWithSHA1And3-KeyTripleDES-CBC. Default is false.
 #keystore.use_legacy_pkcs12 = true
+#
+#
+#
+# CA Crypto Token ID exchange 
+# 
+# List of IDs separated by comma to be exchanged in order. IDsBefore[0] -> IDsAfter[0]
+# Example Changes both -733645675, -892645675 to -787727362
+# Default: null
+#
+#ca.IDsBefore = -733645675, -892645675
+#ca.IDsAfter = -787727362, -787727362
+#
+#
