@@ -19,25 +19,30 @@ import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1OutputStream;
 import org.bouncycastle.asn1.DERBitString;
+import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.RSAPublicKey;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.x509.DigestInfo;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x509.TBSCertificate;
 import org.bouncycastle.asn1.x509.Time;
 import org.bouncycastle.asn1.x509.V3TBSCertificateGenerator;
-import org.hibernate.sql.Alias;
+import org.bouncycastle.asn1.x509.X509ObjectIdentifiers;
+import org.bouncycastle.crypto.digests.SHA1Digest;
 import org.pkcs11.jacknji11.C;
 import org.pkcs11.jacknji11.CKA;
 import org.pkcs11.jacknji11.CKC;
+import org.pkcs11.jacknji11.CKK;
 import org.pkcs11.jacknji11.CKM;
 import org.pkcs11.jacknji11.CKO;
 import org.pkcs11.jacknji11.CKR;
 import org.pkcs11.jacknji11.CKRException;
 import org.pkcs11.jacknji11.CKU;
 import org.pkcs11.jacknji11.CK_SESSION_INFO;
-import org.pkcs11.jacknji11.Hex;
 import org.pkcs11.jacknji11.LongRef;
 
 public class Ed25519 {
@@ -299,7 +304,7 @@ public class Ed25519 {
         long rv3 = C.DestroyObject(sessionRef.value(), certificate.value());
         if (rv3 != CKR.OK) throw new CKRException(rv3);
         hsmInfo.KeyPairCache.remove(alias);
-        
+
         log.info("Removed KeyPair: " + alias);
     }
 
@@ -514,6 +519,143 @@ public class Ed25519 {
         return pubKey;
     }
 
+     /**
+     * Gets the key algorithm through public key LongRef.
+     * @param LongRef pubKey
+     * @param sessionRef Ref of the C session
+     * @return String id
+     */
+    public static String getAlgo(LongRef pubKey, LongRef sessionRef){
+
+        CKA[] templ = new CKA[]{
+            new CKA(CKA.KEY_TYPE),
+         };
+         
+        long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
+        // allocate memory and call again
+        for (int i = 0; i < templ.length; i++){
+            templ[i].pValue = new byte[(int) templ[i].ulValueLen];
+        }
+        //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
+        long rv2 = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+
+        final CKA algo = templ[0];
+        
+        return CKK.L2S(algo.getValueLong());
+    }
+
+    /**
+     * Gets the key algorithm through public key LongRef.
+     * @param LongRef pubKey
+     * @param sessionRef Ref of the C session
+     * @return String id
+     */
+    public static String getECDSAparams(LongRef pubKey, LongRef sessionRef){
+
+        CKA[] templ = new CKA[]{
+            new CKA(CKA.EC_PARAMS),
+         };
+         
+        long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
+        // allocate memory and call again
+        for (int i = 0; i < templ.length; i++){
+            templ[i].pValue = new byte[(int) templ[i].ulValueLen];
+        }
+        //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
+        long rv2 = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+
+        final CKA params = templ[0];
+        
+        return params.getValueStr();
+    }
+
+    /**
+     * Gets the key algorithm through public key LongRef.
+     * @param LongRef pubKey
+     * @param sessionRef Ref of the C session
+     * @return String id
+     */
+    public static BigInteger getRsaModulos(LongRef pubKey, LongRef sessionRef){
+
+        CKA[] templ = new CKA[]{
+            new CKA(CKA.MODULUS),
+         };
+
+        long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
+        // allocate memory and call again
+        for (int i = 0; i < templ.length; i++){
+            templ[i].pValue = new byte[(int) templ[i].ulValueLen];
+        }
+        //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
+        long rv2 = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+
+        final CKA mod = templ[0];
+        
+        return mod.getValueBigInt();
+    }
+
+    /**
+     * Gets the key algorithm through public key LongRef.
+     * @param LongRef pubKey
+     * @param sessionRef Ref of the C session
+     * @return String id
+     */
+    public static BigInteger getRsaPublicExponent(LongRef pubKey, LongRef sessionRef){
+
+        CKA[] templ = new CKA[]{
+            new CKA(CKA.PUBLIC_EXPONENT),
+         };
+
+        long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
+        // allocate memory and call again
+        for (int i = 0; i < templ.length; i++){
+            templ[i].pValue = new byte[(int) templ[i].ulValueLen];
+        }
+        //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
+        long rv2 = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+
+        final CKA exp = templ[0];
+        
+        return exp.getValueBigInt();
+    }
+
+    /**
+     * Gets the key algorithm through public key LongRef.
+     * @param LongRef pubKey
+     * @param sessionRef Ref of the C session
+     * @return String id
+     */
+    public static Long getRsaModulusBits(LongRef pubKey, LongRef sessionRef){
+
+        CKA[] templ = new CKA[]{
+            new CKA(CKA.MODULUS_BITS),
+         };
+         
+        long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv != CKR.OK) throw new CKRException(rv);
+        // allocate memory and call again
+        for (int i = 0; i < templ.length; i++){
+            templ[i].pValue = new byte[(int) templ[i].ulValueLen];
+        }
+        //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
+        long rv2 = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        if (rv2 != CKR.OK) throw new CKRException(rv2);
+
+        final CKA bits = templ[0];
+        
+        return bits.getValueLong();
+    }
+
+    
+
     /**
      * Resize buf to specified length. If buf already size 'newSize', then return buf, else return resized buf.
      * @param buf buf
@@ -686,22 +828,37 @@ public class Ed25519 {
         for(String alias : aliasList){
             LongRef privateKey = getPrivateKeyRef(alias, sessionRef);
             LongRef publicKey = getPublicKeyRef(alias, sessionRef);
+            String algo = getAlgo(publicKey, sessionRef);
             LongRef certificate = getCertificateRef(alias, sessionRef);
 
-
-            if(certificate.value == (long) 0 ){
-                String id = getID(publicKey, sessionRef);
+            if(algo.equals("EC")){
                 
+                String ecParams = getECDSAparams(publicKey, sessionRef);
+                 
+                if(ecParams.equals("edwards25519") && certificate.value == (long) 0 ){
+                    String id = getID(publicKey, sessionRef);
+                    
+                    try {
+                        generateSelfCertificateFix(sessionRef, publicKey, privateKey, alias, hsmInf , id);
+                    } catch (InvalidKeyException | CertificateException | IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+            }else if(algo.equals("RSA") && certificate.value == (long) 0 ){
+
+                String id = getID(publicKey, sessionRef);
+                    
                 try {
-                    generateSelfCertificateFix(sessionRef, publicKey, privateKey, alias, hsmInf , id);
+                    generateSelfCertificateFixRsa(sessionRef, publicKey, privateKey, alias, hsmInf , id);
                 } catch (InvalidKeyException | CertificateException | IOException e) {
                     e.printStackTrace();
                 }
-                
-                
-            }
-             
 
+            }
+
+            
+        
         }
 
 
@@ -787,6 +944,113 @@ public class Ed25519 {
         ASN1EncodableVector v = new ASN1EncodableVector();
         v.add(tbsCert);
         v.add(new AlgorithmIdentifier(EdECObjectIdentifiers.id_Ed25519));
+        v.add(new DERBitString(signature));
+
+        DERSequence der = new DERSequence(v);
+        ByteArrayInputStream baos = new ByteArrayInputStream(der.getEncoded());
+
+        X509Certificate cert = (X509Certificate) CertificateFactory.getInstance("X.509")
+                        .generateCertificate(baos);
+
+        LongRef certRef = new LongRef();
+
+        CKA[] certTemplate = new CKA[] {
+            new CKA(CKA.CLASS, CKO.CERTIFICATE),
+            new CKA(CKA.CERTIFICATE_TYPE, CKC.CKC_X_509),
+            new CKA(CKA.TOKEN, true),
+            new CKA(CKA.LABEL, keyAlias),
+            new CKA(CKA.SUBJECT, cert.getSubjectX500Principal().getEncoded()),
+            new CKA(CKA.ISSUER,cert.getSubjectX500Principal().getEncoded()),
+            new CKA(CKA.SERIAL_NUMBER, cert.getSerialNumber().toByteArray()),
+            new CKA(CKA.ID, id),
+            new CKA(CKA.VALUE, cert.getEncoded())
+        };
+        long rv6 = C.CreateObject(sessionRef.value(), certTemplate, certRef);
+        if (rv6 != CKR.OK) throw new CKRException(rv6);
+
+        updateKeypairCache(keyAlias, hsmInfo);
+
+        return cert;
+    }
+
+    /**
+     * Copy of generateSelfCertificate above but used only for fixing certificates so it can have same IDs
+     * @param sessionRef LongRef to the session
+     * @param pubKey Public key of the alias
+     * @param privKey Private key of the alias 
+     * @param keyAlias Key Alias
+     * @param hsmInfo Cache info
+     * @return The X509 Certificate
+     * @throws IOException
+     * @throws CertificateException
+     * @throws InvalidKeyException
+     */
+    private static X509Certificate generateSelfCertificateFixRsa(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias, HsmInformation hsmInfo, String id) throws InvalidKeyException, IOException, CertificateException{
+
+        final long currentTime = new Date().getTime();
+        final Date firstDate = new Date(currentTime - 24 * 60 * 60 * 1000);
+        final Date lastDate = new Date(currentTime + (long) (30 * 24 * 60 * 60 * 365) * 1000);
+        final X500Name issuer = new X500Name("CN=Dummy certificate created by a CESeCore application");
+        final BigInteger serno = BigInteger.valueOf(firstDate.getTime());
+
+
+        Calendar expiry = Calendar.getInstance();
+                int validity = (30 * 24 * 60 * 60 * 365) * 1000;
+                expiry.add(Calendar.DAY_OF_YEAR, validity);
+
+        // Certificate structure
+        V3TBSCertificateGenerator certGen = new V3TBSCertificateGenerator();
+        certGen.setSerialNumber(new ASN1Integer(serno));
+
+        byte[] modulus = getRsaModulos(pubKey, sessionRef).toByteArray();
+        byte[] publicExponent =  getRsaPublicExponent(pubKey, sessionRef).toByteArray();
+
+        final BigInteger n = new BigInteger(1, modulus);
+        final BigInteger e = new BigInteger(1, publicExponent);
+
+        RSAPublicKey pk = new RSAPublicKey(n, e);
+
+        
+        certGen.setIssuer(issuer);
+        certGen.setSubject(issuer);
+        certGen.setStartDate(new Time(firstDate));
+        certGen.setEndDate(new Time(lastDate));
+        certGen.setSubjectPublicKeyInfo(new SubjectPublicKeyInfo(new AlgorithmIdentifier(PKCSObjectIdentifiers.rsaEncryption, DERNull.INSTANCE), pk));
+
+        certGen.setSignature(new AlgorithmIdentifier(PKCSObjectIdentifiers.sha1WithRSAEncryption, DERNull.INSTANCE));
+
+        // generate certificate
+        TBSCertificate tbsCert = certGen.generateTBSCertificate();
+
+        //Sign certificate
+        SHA1Digest digester = new SHA1Digest();
+        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+        ASN1OutputStream dOut = ASN1OutputStream.create(bOut);
+        dOut.writeObject(tbsCert);
+        byte[] certBlock = bOut.toByteArray();
+
+        // first create digest
+        digester.update(certBlock, 0, certBlock.length);
+        byte[] hash = new byte[digester.getDigestSize()];
+        digester.doFinal(hash, 0);
+
+        DigestInfo dInfo = new DigestInfo( new AlgorithmIdentifier(X509ObjectIdentifiers.id_SHA1, null), hash);
+        byte[] digest = dInfo.getEncoded();
+
+        long rv3 = C.SignInit(sessionRef.value(), new CKM(CKM.SHA1_RSA_PKCS), privKey.value());
+        if (rv3 != CKR.OK) throw new CKRException(rv3);
+
+        LongRef length = new LongRef();
+        long rv4 = C.Sign(sessionRef.value(), digest, null, length);
+        if (rv4 != CKR.OK) throw new CKRException(rv4);
+        byte[] result = new byte[(int) length.value()];
+        long rv5 = C.Sign(sessionRef.value(), digest, result, length);
+        if (rv5 != CKR.OK) throw new CKRException(rv5);
+        byte[] signature = resize(result, (int) length.value());
+
+        ASN1EncodableVector v = new ASN1EncodableVector();
+        v.add(tbsCert);
+        v.add(new AlgorithmIdentifier(PKCSObjectIdentifiers.sha1WithRSAEncryption, DERNull.INSTANCE));
         v.add(new DERBitString(signature));
 
         DERSequence der = new DERSequence(v);
