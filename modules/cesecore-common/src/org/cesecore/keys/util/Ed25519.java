@@ -398,10 +398,10 @@ public class Ed25519 {
     public static void removeTokenFromCache(String providerName, String tokenName){
         HsmInformation hsmInf = hsmInfoCache.get(providerName);
 
-        if(hsmInf.tokenName.contains(tokenName)){
+        if(hsmInf != null && hsmInf.tokenName != null && hsmInf.tokenName.contains(tokenName)){
             hsmInf.tokenName.remove(tokenName);
         }
-        if(hsmInf.tokenName.isEmpty()){
+        if(hsmInf != null && hsmInf.tokenName != null && hsmInf.tokenName.isEmpty()){
             hsmInfoCache.remove(providerName);
         }
 
@@ -425,7 +425,9 @@ public class Ed25519 {
 
             KeyPairInfo keypair = new KeyPairInfo(publicKey, privateKey, certificate);
             hsmCache.addKeyPair(alias, keypair);
-            log.info("Adding " + alias + " to cache.");
+            if (log.isDebugEnabled()) {
+                log.debug("Adding " + alias + " to cache.");
+            }
         }
     }
         

@@ -566,7 +566,9 @@ public class CaSessionBean implements CaSessionLocal, CaSessionRemote {
                 if(id_before.contains(token.getCryptoTokenId())){
                     int index = id_before.indexOf(token.getCryptoTokenId());
 
-                    log.info("Changing CA with ID " + ca.getCAId() + ", Crypto Token ID: " + token.getCryptoTokenId() + " to " + (int) id_after.get(index));
+                    if (log.isDebugEnabled()) {
+                        log.debug("Changing CA with ID " + ca.getCAId() + ", Crypto Token ID: " + token.getCryptoTokenId() + " to " + (int) id_after.get(index));
+                    }
                     token.setCryptoTokenId((int) id_after.get(index));
                 }
             }

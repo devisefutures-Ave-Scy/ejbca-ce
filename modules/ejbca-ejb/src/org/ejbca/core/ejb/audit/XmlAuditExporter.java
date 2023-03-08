@@ -80,6 +80,9 @@ public class XmlAuditExporter {
     static int minutes_dip;
     static Timer timer_dip;
     static String dip, dipHashAlgorithm;
+    static int max_results_xml;
+    static int max_results_cms;
+    static int max_results_dip;
     /** Hash Algorithms available for Database Integrity Protection */
     private static final String dipAvailablehashAlgorithm = "SHA-256SHA-512";
 
@@ -191,6 +194,8 @@ public class XmlAuditExporter {
                 log.debug("Configured time frequency (in minutes) at which the security audit log is extracted: " + minutes_xml);
                 path_xml = pc.getString("securityeventsaudit.xmlexporter.path_log", "/tmp/");
                 log.debug("Configured path of the security audit log file: " + path_xml);
+                max_results_xml = pc.getInt("securityeventsaudit.xmlexporter.maxResults", 1000);
+                log.debug("Configured number os max results of the audit log file: " + max_results_xml);
             }
         } catch (ConfigurationException e) {
             log.error("Error initializing environment for exporting the events to an XML file: ", e);
@@ -219,6 +224,8 @@ public class XmlAuditExporter {
                 log.debug("Configured time frequency (in minutes) at which the security audit log is signed: " + minutes_cms);
                 path_cms = pc.getString("securityeventsaudit.xmlexporter.path_cms", "/tmp/");
                 log.debug("Configured path of the signed security audit log file: " + path_cms);
+                max_results_cms = pc.getInt("securityeventsaudit.xmlexporter.signMaxResults", 1000);
+                log.debug("Configured number os max results of the audit log file: " + max_results_cms);
                 ca = pc.getString("securityeventsaudit.xmlexporter.ca", null);
                 if (ca != null) {
                     enable = true;
@@ -255,6 +262,8 @@ public class XmlAuditExporter {
                 log.debug(
                         "Configured time frequency (in minutes) at which the audit log signing event is created (for Database Integrity Protection): "
                                 + minutes_dip);
+                max_results_dip = pc.getInt("securityeventsaudit.xmlexporter.dipMaxResults", 1000);
+                log.debug("Configured number os max results of the audit log file: " + max_results_cms);
                 dip = pc.getString("securityeventsaudit.xmlexporter.dip", null);
                 if (dip != null && dip.toLowerCase().contains("hash")) {
                     enable = true;
@@ -328,7 +337,7 @@ public class XmlAuditExporter {
 
             log.info("Exporting security audit log to the XML file - scheduled execution");
             try {
-                final Object[] l = getData(EventTypes.LOG_XML, EventStatus.SUCCESS);
+                final Object[] l = getData(EventTypes.LOG_XML, EventStatus.SUCCESS, max_results_xml);
                 List<? extends AuditLogEntry> results = (List<? extends AuditLogEntry>) l[2];
                 last_log = (long) l[1];
                 first_log = (long) l[0];
@@ -367,7 +376,7 @@ public class XmlAuditExporter {
 
             log.info("Signing and exporting security audit log to the XML file - scheduled execution");
             try {
-                final Object[] l = getData(EventTypes.LOG_SIGN, EventStatus.SUCCESS);
+                final Object[] l = getData(EventTypes.LOG_SIGN, EventStatus.SUCCESS, max_results_cms);
                 List<? extends AuditLogEntry> results = (List<? extends AuditLogEntry>) l[2];
                 last_log = (long) l[1];
                 first_log = (long) l[0];
@@ -421,7 +430,7 @@ public class XmlAuditExporter {
 
             log.info("Database Integrity Protection - scheduled execution");
             try {
-                final Object[] l = getData(EventTypes.LOG_DIP, EventStatus.SUCCESS);
+                final Object[] l = getData(EventTypes.LOG_DIP, EventStatus.SUCCESS, max_results_dip);
                 List<? extends AuditLogEntry> results = (List<? extends AuditLogEntry>) l[2];
                 last_log = (long) l[1];
                 first_log = (long) l[0];
@@ -479,7 +488,7 @@ public class XmlAuditExporter {
      * @return Object[] with { first_log, last_log, results }
      * @throws AuthorizationDeniedException
      */
-    public static Object[] getData(EventTypes type, EventStatus status) throws AuthorizationDeniedException {
+    public static Object[] getData(EventTypes type, EventStatus status, int maxResults) throws AuthorizationDeniedException {
         List<? extends AuditLogEntry> last_event_log, results;
         Long last_log = (long) -1;
         Long first_log = (long) -1;
@@ -495,11 +504,11 @@ public class XmlAuditExporter {
             }
         }
 
-        results = getResults(last_log);
+        results = getResults(last_log, maxResults);
 
         if (!results.isEmpty()) { // if there are new audit events since last event of EventTypes type and EventStatus status 
-            first_log = results.get(0).getSequenceNumber(); // first result has the highest sequence number
-            last_log = results.get(results.size() - 1).getSequenceNumber();
+            last_log = results.get(0).getSequenceNumber(); 
+            first_log = results.get(results.size() - 1).getSequenceNumber(); // first result has the highest sequence number
 
             if (log.isDebugEnabled()) {
                 log.debug("Found new audit events since last event of EventTypes " + type.toString() + " and EventStatus " + status.toString()
@@ -522,12 +531,12 @@ public class XmlAuditExporter {
      * @return list of security audit events with sequential number greater than last_log
      * @throws AuthorizationDeniedException
      */
-    private static List<? extends AuditLogEntry> getResults(Long last_log) throws AuthorizationDeniedException {
+    private static List<? extends AuditLogEntry> getResults(Long last_log, int maxResults) throws AuthorizationDeniedException {
         final List<Object> parameters = new ArrayList<>();
 
         parameters.add(last_log);
 
-        return new EjbLocalHelper().getEjbcaAuditorSession().selectAuditLog(token, device, 0, 0, "a.sequenceNumber > ?0", "a.timeStamp DESC",
+        return new EjbLocalHelper().getEjbcaAuditorSession().selectAuditLog(token, device, 0, maxResults, "a.sequenceNumber > ?0", "a.timeStamp ASC",
                 parameters);
     }
 
