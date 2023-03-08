@@ -507,6 +507,45 @@ public class CaSessionBean implements CaSessionLocal, CaSessionRemote {
         if (ca == null) {
             return null;
         } else {
+
+            List<Object> id_before_obj = new ArrayList<>();
+            List<Object> id_after_obj = new ArrayList<>();
+
+            List<Integer> id_before = new ArrayList<>();
+            List<Integer> id_after = new ArrayList<>();
+
+            try {
+                final URL url = ConfigurationHolder.class.getResource("/conf/cesecore.properties");
+                if (url != null) {
+
+                    final PropertiesConfiguration pc = ConfigurationHolder.loadProperties(url);
+                    ListDelimiterHandler delimiter = new DefaultListDelimiterHandler(',');
+                    pc.setListDelimiterHandler(delimiter);
+
+                    id_before_obj = pc.getList("ca.IDsBefore", null);
+                    log.debug("List of IDs to be changed: " + id_before);
+                    
+                    id_after_obj = pc.getList("ca.IDsAfter", null);
+                    log.debug("List of IDs to be changed to : " + id_after);
+                }
+            } catch (ConfigurationException e) {
+                log.error("Error initializing environment for changing CA CryptoToken ID: ", e);
+            }
+
+            CAToken token = ca.getCAToken();
+
+            if(id_before_obj != null && id_after_obj != null && !id_before_obj.isEmpty() && !id_after_obj.isEmpty() && id_before.size() == id_after.size()){
+                for(Object s : id_before_obj) id_before.add(Integer.parseInt((String) s));
+                for(Object s : id_after_obj) id_after.add(Integer.parseInt((String) s));
+
+                if(id_before.contains(token.getCryptoTokenId())){
+                    int index = id_before.indexOf(token.getCryptoTokenId());
+
+                    log.info("Changing CA with ID " + ca.getCAId() + ", Crypto Token ID: " + token.getCryptoTokenId() + " to " + (int) id_after.get(index));
+                    token.setCryptoTokenId((int) id_after.get(index));
+                }
+            }
+            
             return ca.getCAInfo();
         }
     }
@@ -520,6 +559,45 @@ public class CaSessionBean implements CaSessionLocal, CaSessionRemote {
         if (ca == null) {
             return null;
         } else {
+
+            List<Object> id_before_obj = new ArrayList<>();
+            List<Object> id_after_obj = new ArrayList<>();
+
+            List<Integer> id_before = new ArrayList<>();
+            List<Integer> id_after = new ArrayList<>();
+
+            try {
+                final URL url = ConfigurationHolder.class.getResource("/conf/cesecore.properties");
+                if (url != null) {
+
+                    final PropertiesConfiguration pc = ConfigurationHolder.loadProperties(url);
+                    ListDelimiterHandler delimiter = new DefaultListDelimiterHandler(',');
+                    pc.setListDelimiterHandler(delimiter);
+
+                    id_before_obj = pc.getList("ca.IDsBefore", null);
+                    log.debug("List of IDs to be changed: " + id_before);
+                    
+                    id_after_obj = pc.getList("ca.IDsAfter", null);
+                    log.debug("List of IDs to be changed to : " + id_after);
+                }
+            } catch (ConfigurationException e) {
+                log.error("Error initializing environment for changing CA CryptoToken ID: ", e);
+            }
+
+            CAToken token = ca.getCAToken();
+
+            if(id_before_obj != null && id_after_obj != null && !id_before_obj.isEmpty() && !id_after_obj.isEmpty() && id_before.size() == id_after.size()){
+                for(Object s : id_before_obj) id_before.add(Integer.parseInt((String) s));
+                for(Object s : id_after_obj) id_after.add(Integer.parseInt((String) s));
+
+                if(id_before.contains(token.getCryptoTokenId())){
+                    int index = id_before.indexOf(token.getCryptoTokenId());
+
+                    log.info("Changing CA with ID " + ca.getCAId() + ", Crypto Token ID: " + token.getCryptoTokenId() + " to " + (int) id_after.get(index));
+                    token.setCryptoTokenId((int) id_after.get(index));
+                }
+            }
+
             return ca.getCAInfo();
         }   
     }
@@ -603,6 +681,45 @@ public class CaSessionBean implements CaSessionLocal, CaSessionRemote {
         if (ca == null) {
             return null;
         } else {
+
+            List<Object> id_before_obj = new ArrayList<>();
+            List<Object> id_after_obj = new ArrayList<>();
+
+            List<Integer> id_before = new ArrayList<>();
+            List<Integer> id_after = new ArrayList<>();
+
+            try {
+                final URL url = ConfigurationHolder.class.getResource("/conf/cesecore.properties");
+                if (url != null) {
+
+                    final PropertiesConfiguration pc = ConfigurationHolder.loadProperties(url);
+                    ListDelimiterHandler delimiter = new DefaultListDelimiterHandler(',');
+                    pc.setListDelimiterHandler(delimiter);
+
+                    id_before_obj = pc.getList("ca.IDsBefore", null);
+                    log.debug("List of IDs to be changed: " + id_before);
+                    
+                    id_after_obj = pc.getList("ca.IDsAfter", null);
+                    log.debug("List of IDs to be changed to : " + id_after);
+                }
+            } catch (ConfigurationException e) {
+                log.error("Error initializing environment for changing CA CryptoToken ID: ", e);
+            }
+
+            CAToken token = ca.getCAToken();
+
+            if(id_before_obj != null && id_after_obj != null && !id_before_obj.isEmpty() && !id_after_obj.isEmpty() && id_before.size() == id_after.size()){
+                for(Object s : id_before_obj) id_before.add(Integer.parseInt((String) s));
+                for(Object s : id_after_obj) id_after.add(Integer.parseInt((String) s));
+
+                if(id_before.contains(token.getCryptoTokenId())){
+                    int index = id_before.indexOf(token.getCryptoTokenId());
+
+                    log.info("Changing CA with ID " + ca.getCAId() + ", Crypto Token ID: " + token.getCryptoTokenId() + " to " + (int) id_after.get(index));
+                    token.setCryptoTokenId((int) id_after.get(index));
+                }
+            }
+            
             return ca.getCAInfo();
         }         
     }

@@ -144,8 +144,8 @@ public abstract class BaseCryptoToken implements CryptoToken {
     public void testKeyPair(final String alias) throws InvalidKeyException, CryptoTokenOfflineException { // NOPMD:this is not a junit test
         final PublicKey publicKey = getPublicKey(alias);
         PrivateKey privateKey = null;
-
-        if(!(publicKey.getAlgorithm() == "Ed25519")){
+        
+        if(publicKey != null && !(publicKey.getAlgorithm() == "Ed25519")){
             privateKey = getPrivateKey(alias); 
         }
 
@@ -161,7 +161,7 @@ public abstract class BaseCryptoToken implements CryptoToken {
             log.debug("The key '" + alias + "' will be tested using the provider '" + getSignProviderName() + "'.");
         }
 
-        if(!(publicKey.getAlgorithm() == "Ed25519")){
+        if(publicKey != null && !(publicKey.getAlgorithm() == "Ed25519")){
             if (!permitExtractablePrivateKeyForTest() && KeyTools.isPrivateKeyExtractable(privateKey)) {
                 String msg = intres.getLocalizedMessage("token.extractablekey", CesecoreConfiguration.isPermitExtractablePrivateKeys());
                 if (!CesecoreConfiguration.isPermitExtractablePrivateKeys()) {
