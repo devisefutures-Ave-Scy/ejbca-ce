@@ -1342,6 +1342,8 @@ public final class KeyTools {
      *            key alias
      * @param pub
      *            public key to verify the signature with
+     * @param providerName
+     *            Name of the provider used for signing with.
      * @throws InvalidKeyException
      *             if the public key can not be used to verify a string signed by the private key, because the key is wrong or the signature operation
      *             fails for other reasons such as a NoSuchAlgorithmException or SignatureException.

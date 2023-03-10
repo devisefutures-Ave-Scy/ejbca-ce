@@ -12,7 +12,10 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
+
+import javax.ejb.EJBException;
 
 import org.apache.log4j.Logger;
 import org.bouncycastle.asn1.ASN1EncodableVector;
@@ -63,14 +66,13 @@ public class Ed25519 {
     public X509Certificate generateEd25519(final String keyAlias, String providerName) throws InvalidKeyException, CertificateException, IOException{
 
         HsmInformation hsmInfo = hsmInfoCache.get(providerName);
-        LongRef sessionRef = hsmInfo.getSessionRef();
-
+        
         // Generate Ed25519 key pair
         LongRef pubKey = new LongRef();
         LongRef privKey = new LongRef();
-        generateKeyPairEd25519(sessionRef.value(), pubKey, privKey, keyAlias);
+        generateKeyPairEd25519(hsmInfo, pubKey, privKey, keyAlias);
         
-        return generateSelfCertificate(sessionRef, pubKey, privKey, keyAlias, hsmInfo);
+        return generateSelfCertificate(pubKey, privKey, keyAlias, hsmInfo);
     }
 
 
@@ -82,7 +84,7 @@ public class Ed25519 {
      * @param privateKey gets handle of new private key
      * @param keyalias the alias for the new key
      */
-    private void generateKeyPairEd25519(long session, LongRef publicKey, LongRef privateKey, String keyalias) {
+    private void generateKeyPairEd25519(HsmInformation hsmInfo, LongRef publicKey, LongRef privateKey, String keyalias) {
         // Attributes from PKCS #11 Cryptographic Token Interface Current Mechanisms
         // Specification Version 2.40 section 2.3.3 - ECDSA public key objects
         /*
@@ -114,10 +116,17 @@ public class Ed25519 {
                         new CKA(CKA.LABEL, (keyalias + "-private").getBytes()),
                         new CKA(CKA.ID, keyalias.getBytes()),
         };
-        long rv = C.GenerateKeyPair(session, new CKM(CKM.ECDSA_KEY_PAIR_GEN), pubTempl, privTempl, publicKey, privateKey);
-        if (rv != CKR.OK) throw new CKRException(rv);
-        
-        log.info("Generated KeyPair with alias: " + keyalias);
+
+        LongRef sessionRef = hsmInfo.getSession();
+        try {
+            C.GenerateKeyPair(sessionRef.value(), new CKM(CKM.ECDSA_KEY_PAIR_GEN), pubTempl, privTempl, publicKey, privateKey);
+        } catch (CKRException rv) {
+            hsmInfo.CloseSession(sessionRef);
+            throw new EJBException("Failed to generate Key Pair: " + keyalias, rv);
+        }finally{
+            hsmInfo.releaseSession(sessionRef);
+            log.info("Generated KeyPair with alias: " + keyalias);
+        }
     }
 
     /**
@@ -133,8 +142,10 @@ public class Ed25519 {
      * @throws CertificateException
      * @throws InvalidKeyException
      */
-    private static X509Certificate generateSelfCertificate(LongRef sessionRef, LongRef pubKey, LongRef privKey, String keyAlias, HsmInformation hsmInfo) throws InvalidKeyException, IOException, CertificateException{
+    private static X509Certificate generateSelfCertificate(LongRef pubKey, LongRef privKey, String keyAlias, HsmInformation hsmInfo) throws InvalidKeyException, IOException, CertificateException{
+        LongRef sessionRef = hsmInfo.getSession();
 
+        
         final long currentTime = new Date().getTime();
         final Date firstDate = new Date(currentTime - 24 * 60 * 60 * 1000);
         final Date lastDate = new Date(currentTime + (long) (30 * 24 * 60 * 60 * 365) * 1000);
@@ -154,17 +165,20 @@ public class Ed25519 {
             new CKA(CKA.VALUE),
             new CKA(CKA.EC_POINT),
             new CKA(CKA.EC_PARAMS)
-         };
-         
-        long rv = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
-        if (rv != CKR.OK) throw new CKRException(rv);
-        // allocate memory and call again
-        for (int i = 0; i < templ.length; i++){
-            templ[i].pValue = new byte[(int) templ[i].ulValueLen];
+        };
+        
+        try{
+            C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+            // allocate memory and call again
+            for (int i = 0; i < templ.length; i++){
+                templ[i].pValue = new byte[(int) templ[i].ulValueLen];
+            }
+
+            C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
+        }catch (CKRException rv) {
+            hsmInfo.CloseSession(sessionRef);
+            throw new EJBException("Couldn't get EC params or point.", rv);
         }
-        //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
-        long rv2 = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
-        if (rv2 != CKR.OK) throw new CKRException(rv2);
         
         final CKA ecPoint = templ[0];
         
@@ -186,20 +200,24 @@ public class Ed25519 {
         dOut.writeObject(tbsCert);
 
         byte[] certBlock = bOut.toByteArray();
+        byte[] signature;
 
-        // since the algorythm is Ed25519 there's no need to create a digest.
-        long rv3 = C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
-        if (rv3 != CKR.OK) throw new CKRException(rv3);
+        try{
+            // since the algorythm is Ed25519 there's no need to create a digest.
+            C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
 
-        LongRef length = new LongRef();
-        long rv4 = C.Sign(sessionRef.value(), certBlock, null, length);
-        if (rv4 != CKR.OK) throw new CKRException(rv4);
+            LongRef length = new LongRef();
+            C.Sign(sessionRef.value(), certBlock, null, length);
 
-        byte[] result = new byte[(int) length.value()];
-        long rv5 = C.Sign(sessionRef.value(), certBlock, result, length);
-        if (rv5 != CKR.OK) throw new CKRException(rv5);
+            byte[] result = new byte[(int) length.value()];
+            C.Sign(sessionRef.value(), certBlock, result, length);
 
-        byte[] signature = resize(result, (int) length.value());
+            signature = resize(result, (int) length.value());
+
+        }catch (CKRException rv) {
+            hsmInfo.CloseSession(sessionRef);
+            throw new EJBException("Couldn't sign self signed certificate", rv);
+        }
 
         ASN1EncodableVector v = new ASN1EncodableVector();
         v.add(tbsCert);
@@ -225,14 +243,22 @@ public class Ed25519 {
             new CKA(CKA.ID, keyAlias),
             new CKA(CKA.VALUE, cert.getEncoded())
         };
-        long rv6 = C.CreateObject(sessionRef.value(), certTemplate, certRef);
-        if (rv6 != CKR.OK) throw new CKRException(rv6);
 
+        try{
+            C.CreateObject(sessionRef.value(), certTemplate, certRef);
+
+        }catch (CKRException rv) {
+            hsmInfo.CloseSession(sessionRef);
+            throw new EJBException("Couldn't save self signed certificate", rv);
+        }finally{
+            hsmInfo.releaseSession(sessionRef);
+            log.debug("Saved self signed certifiate with key: " + keyAlias);
+        }
+        
         updateKeypairCache(keyAlias, hsmInfo);
 
-        log.info("Self Certificate created for alias: " + keyAlias);
-
         return cert;
+
     }
     
 
@@ -251,25 +277,29 @@ public class Ed25519 {
     public byte[] sign(String alias, byte[] data, String providerName){
 
         HsmInformation hsmInfo = hsmInfoCache.get(providerName);
-        LongRef sessionRef = hsmInfo.getSessionRef();
+        LongRef sessionRef = hsmInfo.getSession();
+
         updateKeypairCache(alias, hsmInfo);
-        
         LongRef privKey = hsmInfo.KeyPairCache.get(alias).getPrivKey();
 
-        // since the algorythm is Ed25519 there's no need to create a digest.
-        long rv = C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
-        if (rv != CKR.OK) throw new CKRException(rv);
+        try{
+            // since the algorythm is Ed25519 there's no need to create a digest.
+            C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
 
-        LongRef length = new LongRef();
-        long rv2 = C.Sign(sessionRef.value(), data, null, length);
-        if (rv2 != CKR.OK) throw new CKRException(rv2);
-        byte[] result = new byte[(int) length.value()];
-        long rv3 = C.Sign(sessionRef.value(), data, result, length);
-        if (rv3 != CKR.OK) throw new CKRException(rv3);
+            LongRef length = new LongRef();
+            C.Sign(sessionRef.value(), data, null, length);
+            byte[] result = new byte[(int) length.value()];
+            C.Sign(sessionRef.value(), data, result, length);
 
-        log.info("Signed with: " + alias);
+            return result;
 
-        return result;
+        }catch (CKRException rv) {
+            hsmInfo.CloseSession(sessionRef);
+            throw new EJBException("Couldn't sign data", rv);
+        }finally{
+            hsmInfo.releaseSession(sessionRef);
+            log.debug("Signed data with: " + alias);
+        }
     }
 
     /**
@@ -285,7 +315,7 @@ public class Ed25519 {
     public static void removeKeyPair(String alias, String providerName){
 
         HsmInformation hsmInfo = hsmInfoCache.get(providerName);
-        LongRef sessionRef = hsmInfo.getSessionRef();
+        LongRef sessionRef = hsmInfo.getSession();
 
         if(!hsmInfo.KeyPairCache.containsKey(alias)){
             updateKeypairCache(alias,hsmInfo);
@@ -295,17 +325,25 @@ public class Ed25519 {
         LongRef publicKey = hsmInfo.KeyPairCache.get(alias).getPubKey();
         LongRef certificate = hsmInfo.KeyPairCache.get(alias).getCertificate();
 
-        long rv = C.DestroyObject(sessionRef.value(), privateKey.value());
-        if (rv != CKR.OK) throw new CKRException(rv);
+        try{
 
-        long rv2 = C.DestroyObject(sessionRef.value(), publicKey.value());
-        if (rv2 != CKR.OK) throw new CKRException(rv2);
+            long rv = C.DestroyObject(sessionRef.value(), privateKey.value());
+            if (rv != CKR.OK) throw new CKRException(rv);
 
-        long rv3 = C.DestroyObject(sessionRef.value(), certificate.value());
-        if (rv3 != CKR.OK) throw new CKRException(rv3);
-        hsmInfo.KeyPairCache.remove(alias);
+            long rv2 = C.DestroyObject(sessionRef.value(), publicKey.value());
+            if (rv2 != CKR.OK) throw new CKRException(rv2);
 
-        log.info("Removed KeyPair: " + alias);
+            long rv3 = C.DestroyObject(sessionRef.value(), certificate.value());
+            if (rv3 != CKR.OK) throw new CKRException(rv3);
+            hsmInfo.KeyPairCache.remove(alias);
+
+        }catch (CKRException rv) {
+            hsmInfo.CloseSession(sessionRef);
+            throw new EJBException("Couldn't remove KeyPair: " + alias , rv);
+        }finally{
+            hsmInfo.releaseSession(sessionRef);
+            log.debug("Removed KeyPair: " + alias);
+        }
     }
 
     /**
@@ -324,45 +362,83 @@ public class Ed25519 {
     public static HsmInformation updateHsmInfoCache(String providerName, String tokenName, String slotLabel, String authCode, String sharedLibrary){
         if(hsmInfoCache.containsKey(providerName)){
             HsmInformation hsmInf = hsmInfoCache.get(providerName);
-            if(!(hsmInf.authcode.equals(authCode))){
-                long rv = C.CloseSession(hsmInf.getSessionRef().value());
-                if (rv != CKR.OK) throw new CKRException(rv);
-                hsmInf.setAuthCode(authCode);
+            if(!(hsmInf.authcode.equals(authCode))){    
+                LongRef oldSession = hsmInf.getSession();
 
+                try{
+                    C.CloseSession(oldSession.value());
+                }catch (CKRException rv) {
+                    hsmInf.CloseSession(oldSession);
+                    throw new EJBException("Couldn't close session", rv);
+                }
+
+                hsmInf.activeSessions.remove(oldSession);
+                hsmInf.setAuthCode(authCode);
                 LongRef sessionRef = new LongRef();
         
-                C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
-                long rv2 = C.Initialize();
-                if (rv2 != CKR.OK && rv2 != CKR.CRYPTOKI_ALREADY_INITIALIZED) throw new CKRException(rv2);
+                try{
+                    C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
+                    C.Initialize();
+                    C.OpenSession(Long.parseLong(slotLabel), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+                    C.Login(sessionRef.value(), CKU.USER, authCode.getBytes());
 
-                long rv3 = C.OpenSession(Long.parseLong(slotLabel), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
-                if (rv3 != CKR.OK) throw new CKRException(rv3);
-                long rv4 = C.Login(sessionRef.value, CKU.USER, authCode.getBytes());
-                if (rv4 != CKR.OK && rv4 != CKR.USER_ALREADY_LOGGED_IN) throw new CKRException(rv4);
-
-                hsmInf.setSessionRef(sessionRef);
-
+                }catch (CKRException rv) {
+                    if(rv.getCKR() == CKR.CRYPTOKI_ALREADY_INITIALIZED){
+                        log.warn("Token already initialized: " + sharedLibrary);
+                    }else if(rv.getCKR() == CKR.USER_ALREADY_LOGGED_IN){
+                        log.warn("User already logged in: " + sharedLibrary);
+                    }else{
+                        hsmInf.CloseSession(sessionRef);
+                        throw new EJBException("Couldn't open session", rv);
+                    }
+                }finally{
+                    hsmInf.releaseSession(sessionRef);
+                    log.debug("Changed Token Password");
+                }
             }
             if(!hsmInf.tokenName.contains(tokenName)){
                 hsmInf.addTokenName(tokenName);
             }
+
             return hsmInf;
+            
         }else{
         
             LongRef sessionRef = new LongRef();
-        
-            C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
-            long rv5 = C.Initialize();
-            if (rv5 != CKR.OK && rv5 != CKR.CRYPTOKI_ALREADY_INITIALIZED) throw new CKRException(rv5);
+            HsmInformation inf = null;
 
-            long rv6 = C.OpenSession(Long.parseLong(slotLabel), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
-            if (rv6 != CKR.OK) throw new CKRException(rv6);
-            long rv7 = C.Login(sessionRef.value, CKU.USER, authCode.getBytes());
-            if (rv7 != CKR.OK && rv7 != CKR.USER_ALREADY_LOGGED_IN) throw new CKRException(rv7);
+            try{
+                C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
+                C.Initialize();
+                C.OpenSession(Long.parseLong(slotLabel), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+                C.Login(sessionRef.value(), CKU.USER, authCode.getBytes());
+                
+                inf = new HsmInformation(authCode, slotLabel, tokenName, sessionRef, sharedLibrary);
+                hsmInfoCache.put(providerName, inf);
+            }catch (CKRException rv) {
+                if(rv.getCKR() == CKR.CRYPTOKI_ALREADY_INITIALIZED){
+                    log.warn("Token already initialized: " + sharedLibrary);
+                }else if(rv.getCKR() == CKR.USER_ALREADY_LOGGED_IN){
+                    log.warn("User already logged in: " + sharedLibrary);
+                }else{
+                    if(inf != null){
+                        inf.CloseSession(sessionRef);
+                    }
+                    throw new EJBException("Couldn't open session", rv);
+                }
+            }finally{
+                if(inf != null){
+                    inf.releaseSession(sessionRef);
+                }
+                log.debug("Opened Session");
+            }
 
-            HsmInformation inf = new HsmInformation(authCode, slotLabel, tokenName, sessionRef, sharedLibrary);
-            hsmInfoCache.put(providerName, inf);
+            if(inf == null){
+                throw new EJBException("Couldn't open session");
+            }
+
             return inf;
+
         }
     }
 
@@ -419,9 +495,9 @@ public class Ed25519 {
      */
     public static void updateKeypairCache(String alias, HsmInformation hsmCache){
         if(!hsmCache.KeyPairCache.containsKey(alias)){
-            LongRef privateKey = getPrivateKeyRef(alias, hsmCache.getSessionRef());
-            LongRef publicKey = getPublicKeyRef(alias, hsmCache.getSessionRef());
-            LongRef certificate = getCertificateRef(alias, hsmCache.getSessionRef());
+            LongRef privateKey = getPrivateKeyRef(alias, hsmCache);
+            LongRef publicKey = getPublicKeyRef(alias, hsmCache);
+            LongRef certificate = getCertificateRef(alias, hsmCache);
 
             KeyPairInfo keypair = new KeyPairInfo(publicKey, privateKey, certificate);
             hsmCache.addKeyPair(alias, keypair);
@@ -438,7 +514,8 @@ public class Ed25519 {
      * @param sessionRef Ref of the C session
      * @return LongRef of Private Key
      */
-    public static LongRef getPrivateKeyRef(String alias, LongRef sessionRef){
+    public static LongRef getPrivateKeyRef(String alias, HsmInformation hsmCache){
+        LongRef sessionRef = hsmCache.getSession();
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
         CKA[] templ = new CKA[] {new CKA(CKA.LABEL, alias + "-private" )};
@@ -450,6 +527,9 @@ public class Ed25519 {
         if (rv3 != CKR.OK) throw new CKRException(rv3);
 
         LongRef privKey = new LongRef(result[0]);
+
+        hsmCache.releaseSession(sessionRef);
+
         return privKey;
 
     }
@@ -460,7 +540,9 @@ public class Ed25519 {
      * @param sessionRef Ref of the C session
      * @return LongRef of Certificate
      */
-    public static LongRef getCertificateRef(String alias, LongRef sessionRef){
+    public static LongRef getCertificateRef(String alias, HsmInformation hsmCache){
+        LongRef sessionRef = hsmCache.getSession();
+
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
         CKA[] templ = new CKA[] {new CKA(CKA.LABEL, alias)};
@@ -472,6 +554,9 @@ public class Ed25519 {
         if (rv3 != CKR.OK) throw new CKRException(rv3);
 
         LongRef certificate = new LongRef(result[0]);
+
+        hsmCache.releaseSession(sessionRef);
+
         return certificate;
     }
 
@@ -481,7 +566,8 @@ public class Ed25519 {
      * @param sessionRef Ref of the C session
      * @return String id
      */
-    public static String getID(LongRef pubKey, LongRef sessionRef){
+    public static String getID(LongRef pubKey, HsmInformation hsmCache){
+        LongRef sessionRef = hsmCache.getSession();
 
         CKA[] templ = new CKA[]{
             new CKA(CKA.ID),
@@ -497,6 +583,8 @@ public class Ed25519 {
         long rv2 = C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
         if (rv2 != CKR.OK) throw new CKRException(rv2);
         final CKA id = templ[0];
+
+        hsmCache.releaseSession(sessionRef);
         return id.getValueStr();
     }
 
@@ -506,7 +594,9 @@ public class Ed25519 {
      * @param sessionRef Ref of the C session
      * @return LongRef of Public Key
      */
-    public static LongRef getPublicKeyRef(String alias, LongRef sessionRef){
+    public static LongRef getPublicKeyRef(String alias, HsmInformation hsmCache){
+
+        LongRef sessionRef = hsmCache.getSession();
         LongRef objectCount = new LongRef();
         long[] result = new long[1];
         CKA[] templ = new CKA[] {new CKA(CKA.LABEL, alias + "-public")};
@@ -518,6 +608,7 @@ public class Ed25519 {
         if (rv3 != CKR.OK) throw new CKRException(rv3);
 
         LongRef pubKey = new LongRef(result[0]);
+        hsmCache.releaseSession(sessionRef);
         return pubKey;
     }
 
@@ -527,7 +618,8 @@ public class Ed25519 {
      * @param sessionRef Ref of the C session
      * @return String id
      */
-    public static String getAlgo(LongRef pubKey, LongRef sessionRef){
+    public static String getAlgo(LongRef pubKey, HsmInformation hsmCache){
+        LongRef sessionRef = hsmCache.getSession();
 
         CKA[] templ = new CKA[]{
             new CKA(CKA.KEY_TYPE),
@@ -544,6 +636,8 @@ public class Ed25519 {
         if (rv2 != CKR.OK) throw new CKRException(rv2);
 
         final CKA algo = templ[0];
+
+        hsmCache.releaseSession(sessionRef);
         
         return CKK.L2S(algo.getValueLong());
     }
@@ -554,7 +648,8 @@ public class Ed25519 {
      * @param sessionRef Ref of the C session
      * @return String id
      */
-    public static String getECDSAparams(LongRef pubKey, LongRef sessionRef){
+    public static String getECDSAparams(LongRef pubKey, HsmInformation hsmCache){
+        LongRef sessionRef = hsmCache.getSession();
 
         CKA[] templ = new CKA[]{
             new CKA(CKA.EC_PARAMS),
@@ -572,6 +667,7 @@ public class Ed25519 {
 
         final CKA params = templ[0];
         
+        hsmCache.releaseSession(sessionRef);
         return params.getValueStr();
     }
 
@@ -581,7 +677,8 @@ public class Ed25519 {
      * @param sessionRef Ref of the C session
      * @return String id
      */
-    public static BigInteger getRsaModulos(LongRef pubKey, LongRef sessionRef){
+    public static BigInteger getRsaModulus(LongRef pubKey, HsmInformation hsmCache){
+        LongRef sessionRef = hsmCache.getSession();
 
         CKA[] templ = new CKA[]{
             new CKA(CKA.MODULUS),
@@ -598,6 +695,8 @@ public class Ed25519 {
         if (rv2 != CKR.OK) throw new CKRException(rv2);
 
         final CKA mod = templ[0];
+
+        hsmCache.releaseSession(sessionRef);
         
         return mod.getValueBigInt();
     }
@@ -608,7 +707,9 @@ public class Ed25519 {
      * @param sessionRef Ref of the C session
      * @return String id
      */
-    public static BigInteger getRsaPublicExponent(LongRef pubKey, LongRef sessionRef){
+    public static BigInteger getRsaPublicExponent(LongRef pubKey, HsmInformation hsmCache){
+
+        LongRef sessionRef = hsmCache.getSession();
 
         CKA[] templ = new CKA[]{
             new CKA(CKA.PUBLIC_EXPONENT),
@@ -635,7 +736,9 @@ public class Ed25519 {
      * @param sessionRef Ref of the C session
      * @return String id
      */
-    public static Long getRsaModulusBits(LongRef pubKey, LongRef sessionRef){
+    public static Long getRsaModulusBits(LongRef pubKey, HsmInformation hsmCache){
+
+        LongRef sessionRef = hsmCache.getSession();
 
         CKA[] templ = new CKA[]{
             new CKA(CKA.MODULUS_BITS),
@@ -652,6 +755,8 @@ public class Ed25519 {
         if (rv2 != CKR.OK) throw new CKRException(rv2);
 
         final CKA bits = templ[0];
+
+        hsmCache.releaseSession(sessionRef);
         
         return bits.getValueLong();
     }
@@ -677,7 +782,9 @@ public class Ed25519 {
         private String authcode;
         private String slot;
         private List<String> tokenName;
-        private LongRef sessionRef;
+        //private LongRef sessionRef;
+        private final LinkedList<LongRef> idleSessions = new LinkedList<>();
+        private final LinkedList<LongRef> activeSessions = new LinkedList<>();
         private String sharedLibrary;
         private HashMap<String,KeyPairInfo> KeyPairCache;
         
@@ -687,14 +794,69 @@ public class Ed25519 {
             this.slot = slot;
             this.tokenName = new ArrayList<String>();
             this.tokenName.add(tokenName);
-            this.sessionRef = sessionRef;
+            //this.sessionRef = sessionRef;
+            this.idleSessions.push(sessionRef);
             this.sharedLibrary = sharedLibrary;
             this.KeyPairCache = new HashMap<String,KeyPairInfo>();
 
         }
 
-        public void setSessionRef(LongRef sessionRef) {
-            this.sessionRef = sessionRef;
+        //public void setSessionRef(LongRef sessionRef) {
+        //    this.sessionRef = sessionRef;
+        //}
+
+        public synchronized void releaseSession(LongRef sessionRef){
+            if(activeSessions.contains(sessionRef)){
+                activeSessions.remove(sessionRef);
+
+            }else{
+                log.warn("Session not active: " + sessionRef);
+            }
+        }
+
+        public synchronized LongRef getSession(){
+            LongRef sessionRef = new LongRef();
+            if(idleSessions.size() == 0){
+                try{
+                    C.OpenSession(Long.parseLong(this.slot), CK_SESSION_INFO.CKF_RW_SESSION | CK_SESSION_INFO.CKF_SERIAL_SESSION, null, null, sessionRef);
+                    if(log.isDebugEnabled()){
+                        log.debug("iddleSessions is empty, adding new session: " + sessionRef.value());
+                    }
+                }catch (CKRException rv){
+                    throw new EJBException(rv);
+                }
+            }else{
+                sessionRef = idleSessions.pop();
+                if(log.isDebugEnabled()){
+                    log.debug("Removing session from iddle: " + sessionRef.value());
+                }
+            }
+            activeSessions.push(sessionRef);
+            return sessionRef;
+        }
+
+        // Closing the last session causes the user to be logged out. A new iddle session will be created in this case to prevent logout.
+        public synchronized void CloseSession(LongRef sessionRef){
+            if(idleSessions.size() == 0 && activeSessions.size() == 1){
+                releaseSession(getSession());
+            }
+
+            try {
+                C.CloseSession(sessionRef.value());
+            } catch (CKRException rv) {
+                throw new EJBException(rv);
+            }
+
+            if(activeSessions.contains(sessionRef)){
+                activeSessions.remove(sessionRef);
+            }else if(idleSessions.contains(sessionRef)){
+                idleSessions.remove(sessionRef);
+            }
+
+            if(log.isDebugEnabled()){
+                log.debug("Closed Session: " + sessionRef.value());
+            }
+
         }
 
         public void setAuthCode(String authcode) {
@@ -717,9 +879,6 @@ public class Ed25519 {
             return this.slot;
         }
 
-        public LongRef getSessionRef(){
-            return this.sessionRef;
-        }
 
         public String getSharedLibrary(){
             return this.sharedLibrary;
@@ -781,7 +940,7 @@ public class Ed25519 {
         List<String> aliasList = new ArrayList<String>();
 
         HsmInformation hsmInf = hsmInfoCache.get(providerName);
-        LongRef sessionRef = hsmInf.getSessionRef();
+        LongRef sessionRef = hsmInf.getSession();
 
         LongRef objectCount = new LongRef();
         long[] found = new long[1024];
@@ -828,17 +987,17 @@ public class Ed25519 {
         }
 
         for(String alias : aliasList){
-            LongRef privateKey = getPrivateKeyRef(alias, sessionRef);
-            LongRef publicKey = getPublicKeyRef(alias, sessionRef);
-            String algo = getAlgo(publicKey, sessionRef);
-            LongRef certificate = getCertificateRef(alias, sessionRef);
+            LongRef privateKey = getPrivateKeyRef(alias, hsmInf);
+            LongRef publicKey = getPublicKeyRef(alias, hsmInf);
+            String algo = getAlgo(publicKey, hsmInf);
+            LongRef certificate = getCertificateRef(alias, hsmInf);
 
             if(algo.equals("EC")){
                 
-                String ecParams = getECDSAparams(publicKey, sessionRef);
+                String ecParams = getECDSAparams(publicKey, hsmInf);
                  
                 if(ecParams.equals("edwards25519") && certificate.value == (long) 0 ){
-                    String id = getID(publicKey, sessionRef);
+                    String id = getID(publicKey, hsmInf);
                     
                     try {
                         generateSelfCertificateFix(sessionRef, publicKey, privateKey, alias, hsmInf , id);
@@ -849,7 +1008,7 @@ public class Ed25519 {
 
             }else if(algo.equals("RSA") && certificate.value == (long) 0 ){
 
-                String id = getID(publicKey, sessionRef);
+                String id = getID(publicKey, hsmInf);
                     
                 try {
                     generateSelfCertificateFixRsa(sessionRef, publicKey, privateKey, alias, hsmInf , id);
@@ -863,6 +1022,7 @@ public class Ed25519 {
         
         }
 
+        hsmInf.releaseSession(sessionRef);
 
     }
 
@@ -1004,8 +1164,8 @@ public class Ed25519 {
         V3TBSCertificateGenerator certGen = new V3TBSCertificateGenerator();
         certGen.setSerialNumber(new ASN1Integer(serno));
 
-        byte[] modulus = getRsaModulos(pubKey, sessionRef).toByteArray();
-        byte[] publicExponent =  getRsaPublicExponent(pubKey, sessionRef).toByteArray();
+        byte[] modulus = getRsaModulus(pubKey, hsmInfo).toByteArray();
+        byte[] publicExponent =  getRsaPublicExponent(pubKey, hsmInfo).toByteArray();
 
         final BigInteger n = new BigInteger(1, modulus);
         final BigInteger e = new BigInteger(1, publicExponent);
