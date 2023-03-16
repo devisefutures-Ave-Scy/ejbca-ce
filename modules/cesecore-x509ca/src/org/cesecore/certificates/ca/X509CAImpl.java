@@ -111,13 +111,6 @@ import org.bouncycastle.cms.CMSSignedDataGenerator;
 import org.bouncycastle.cms.CMSSignedGenerator;
 import org.bouncycastle.cms.CMSTypedData;
 import org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder;
-import org.bouncycastle.crypto.Signer;
-import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
-import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
-import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters;
-import org.bouncycastle.crypto.signers.Ed25519Signer;
-import org.bouncycastle.crypto.util.OpenSSHPrivateKeyUtil;
-import org.bouncycastle.crypto.util.PrivateKeyFactory;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.BufferingContentSigner;
 import org.bouncycastle.operator.ContentSigner;
@@ -1059,10 +1052,16 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
         try {
             final CAToken catoken = getCAToken();
             final String alias = catoken.getAliasFromPurpose(signatureKeyPurpose);
-            final KeyPair keyPair = new KeyPair(cryptoToken.getPublicKey(alias), cryptoToken.getPrivateKey(alias));
-            req = CertTools.genPKCS10CertificationRequest(signAlg, x509dn, keyPair.getPublic(), attrset, keyPair.getPrivate(), cryptoToken.getSignProviderName());
+            if(!signAlg.equals("Ed25519")){
+                final KeyPair keyPair = new KeyPair(cryptoToken.getPublicKey(alias), cryptoToken.getPrivateKey(alias));
+                req = CertTools.genPKCS10CertificationRequest(signAlg, x509dn, keyPair.getPublic(), attrset, keyPair.getPrivate(), cryptoToken.getSignProviderName());
+                log.trace("<createRequest");
+                return req.getEncoded();
+        }else{
+            req = CertTools.genPKCS10CertificationRequest(signAlg, x509dn, cryptoToken.getPublicKey(alias), attrset, alias, cryptoToken.getSignProviderName());
             log.trace("<createRequest");
             return req.getEncoded();
+        }
         } catch (CryptoTokenOfflineException e) { // NOPMD, since we catch wide below
             throw e;
         } catch (Exception e) {

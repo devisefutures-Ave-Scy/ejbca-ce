@@ -42,6 +42,7 @@ import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DERTaggedObject;
 import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.asn1.cms.ContentInfo;
+import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.Attribute;
 import org.bouncycastle.asn1.pkcs.CertificationRequest;
 import org.bouncycastle.asn1.pkcs.CertificationRequestInfo;
@@ -54,6 +55,7 @@ import org.bouncycastle.asn1.x500.X500NameBuilder;
 import org.bouncycastle.asn1.x500.X500NameStyle;
 import org.bouncycastle.asn1.x500.style.IETFUtils;
 import org.bouncycastle.asn1.x509.AccessDescription;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.AuthorityInformationAccess;
 import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
 import org.bouncycastle.asn1.x509.BasicConstraints;
@@ -113,6 +115,7 @@ import org.cesecore.certificates.util.AlgorithmConstants;
 import org.cesecore.certificates.util.DnComponents;
 import org.cesecore.config.OcspConfiguration;
 import org.cesecore.internal.InternalResources;
+import org.cesecore.keys.util.Ed25519;
 import org.ejbca.cvc.AuthorizationRole;
 import org.ejbca.cvc.CVCAuthorizationTemplate;
 import org.ejbca.cvc.CVCObject;
@@ -136,6 +139,7 @@ import java.math.BigInteger;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.ProviderNotFoundException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
@@ -4522,6 +4526,48 @@ public abstract class CertTools {
         CertificationRequest req = new CertificationRequest(reqInfo, signer.getAlgorithmIdentifier(), sigBits);
         return new PKCS10CertificationRequest(req);
     }
+
+    /**
+    * @param signatureAlgorithm the signature algorithm to sign the CSR.
+    * @param subject the request's subject DN.
+    * @param publickey the public key of the CSR.
+    * @param attributes a set of attributes, for example, extensions, challenge password, etc.
+    * @param alias the key alias.
+    * @param provider the JCA/JCE provider to use.
+    * @return a PKCS10CertificateRequest based on the input parameters.
+    * 
+    * @throws OperatorCreationException if an error occurred while creating the signing key
+    */
+   // Only used for Edwards 25519 keys
+   public static PKCS10CertificationRequest genPKCS10CertificationRequest(String signatureAlgorithm, X500Name subject, PublicKey publickey,
+           ASN1Set attributes, String alias, String provider){
+
+        Ed25519 ed = new Ed25519();
+        CertificationRequestInfo reqInfo;
+        byte[] sig;
+        CertificationRequest req;
+
+        try {
+            SubjectPublicKeyInfo pkinfo = SubjectPublicKeyInfo.getInstance(publickey.getEncoded());
+            reqInfo = new CertificationRequestInfo(subject, pkinfo, attributes);
+
+            if (provider == null) {
+                throw new ProviderNotFoundException();
+                }
+
+                
+            sig = ed.sign(alias, reqInfo.getEncoded(ASN1Encoding.DER), provider);
+            DERBitString sigBits = new DERBitString(sig);
+
+            req = new CertificationRequest(reqInfo, new AlgorithmIdentifier(EdECObjectIdentifiers.id_Ed25519), sigBits);
+                
+
+        } catch (IOException e) {
+            throw new IllegalStateException("Unexpected IOException was caught.", e);
+        }
+        
+        return new PKCS10CertificationRequest(req);
+   }
 
     /**
      * Create a "certs-only" PKCS#7 / CMS from the provided chain.
