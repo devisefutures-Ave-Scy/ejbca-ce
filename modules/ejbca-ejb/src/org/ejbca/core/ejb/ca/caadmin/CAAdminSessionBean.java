@@ -1498,7 +1498,11 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
                     log.debug("SubjectKeyId for CA next public key: "
                             + new String(Hex.encode(KeyTools.createSubjectKeyId(cryptoToken.getPublicKey(nextKeyAlias)).getKeyIdentifier())));
                 }
-                KeyTools.testKey(cryptoToken.getPrivateKey(nextKeyAlias), caCertPublicKey, cryptoToken.getSignProviderName());
+                if(cryptoToken.getPublicKey(nextKeyAlias).getAlgorithm() != "Ed25519"){
+                    KeyTools.testKey(cryptoToken.getPrivateKey(nextKeyAlias), caCertPublicKey, cryptoToken.getSignProviderName());
+                }else{
+                    KeyTools.testKey(nextKeyAlias, caCertPublicKey, cryptoToken.getSignProviderName());
+                }
             } catch (InvalidKeyException e) {
                 throw new EjbcaException(ErrorCode.INVALID_KEY, e);
             }

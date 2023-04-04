@@ -253,8 +253,6 @@ public class CAToken extends UpgradeableDataHashMap {
         try {
             final URL url = ConfigurationHolder.class.getResource("/conf/cesecore.properties");
             if (url != null) {
-                System.out.println(url);
-
                 final PropertiesConfiguration pc = ConfigurationHolder.loadProperties(url);
                 ListDelimiterHandler delimiter = new DefaultListDelimiterHandler(',');
                 pc.setListDelimiterHandler(delimiter);
