@@ -843,7 +843,12 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
             final List<String> keyPairAliases = new ArrayList<>();
             for (final String currentAlias : cryptoToken.getAliases()) {
                 try {
-                    if ((cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.getPublicKey(currentAlias).getAlgorithm() == "Ed25519") || (cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.doesPrivateKeyExist(currentAlias) ) ) {
+                    String lib = null;
+                    String[] parts = cryptoToken.getSignProviderName().split("-");
+                    if (parts.length > 1){
+                        lib = parts[1];
+                    }
+                    if ((cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.getPublicKey(currentAlias).getAlgorithm() == "Ed25519") && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so")) || (cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.doesPrivateKeyExist(currentAlias) ) ) {
                         keyPairAliases.add(currentAlias);
                     } else {
                         if (log.isDebugEnabled()) {
@@ -979,7 +984,14 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
         details.put("msg", "Deleted key pair from CryptoToken " + cryptoTokenId);
         details.put("keyAlias", alias);
         try {
-            if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519"){
+
+            String lib = null;
+            String[] parts = cryptoToken.getSignProviderName().split("-");
+            if (parts.length > 1){
+                lib = parts[1];
+            }
+
+            if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
                 Ed25519.removeKeyPair(alias, cryptoToken.getSignProviderName());
             }
             cryptoToken.deleteEntry(alias);

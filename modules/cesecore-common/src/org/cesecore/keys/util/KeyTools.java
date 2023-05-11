@@ -1283,7 +1283,7 @@ public final class KeyTools {
         final byte signBV[];
         final String testSigAlg;
         try {
-            if (log.isInfoEnabled()) {
+            if (log.isDebugEnabled()) {
                 final StringWriter sw = new StringWriter();
                 try( final PrintWriter pw = new PrintWriter(sw) ) {
                     pw.println("Testing a key:");
@@ -1295,7 +1295,7 @@ public final class KeyTools {
                     pw.println(String.format("\tpublicKey class: %s", pub.getClass().getName()));
                     pw.flush();
                 }
-                log.info(sw.toString());
+                log.debug(sw.toString());
             }
 
             {
@@ -1353,7 +1353,7 @@ public final class KeyTools {
         final byte input[] = "Lillan gick pa vagen ut, motte dar en katt...".getBytes();
         final byte signBV[];
         try {
-            if (log.isInfoEnabled()) {
+            if (log.isDebugEnabled()) {
                 final StringWriter sw = new StringWriter();
                 try( final PrintWriter pw = new PrintWriter(sw) ) {
                     pw.println("Testing a key:");
@@ -1362,7 +1362,7 @@ public final class KeyTools {
                     pw.println(String.format("\tpublicKey class: %s", pub.getClass().getName()));
                     pw.flush();
                 }
-                log.info(sw.toString());
+                log.debug(sw.toString());
             }
             
             /** Used for Ed25519 in Jacknji11  */

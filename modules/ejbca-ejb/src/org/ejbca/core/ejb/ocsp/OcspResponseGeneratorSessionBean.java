@@ -394,7 +394,12 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                             try {
                                 PublicKey publicKey = cryptoToken.getPublicKey(keyPairAlias);
                                 
-                                if(publicKey != null && publicKey.getAlgorithm() == "Ed25519"){
+                                String lib = null;
+                                String[] parts = cryptoToken.getSignProviderName().split("-");
+                                if (parts.length > 1){
+                                    lib = parts[1];
+        }
+                                if(publicKey != null && publicKey.getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
                                     privateKey = null;
                                 }else{
                                     privateKey = cryptoToken.getPrivateKey(keyPairAlias);

@@ -1052,16 +1052,23 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
         try {
             final CAToken catoken = getCAToken();
             final String alias = catoken.getAliasFromPurpose(signatureKeyPurpose);
-            if(!signAlg.equals("Ed25519")){
+            
+            String lib = null;
+            String[] parts = cryptoToken.getSignProviderName().split("-");
+            if (parts.length > 1){
+                lib = parts[1];
+            }
+
+            if(signAlg.equals("Ed25519") && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
+                req = CertTools.genPKCS10CertificationRequest(signAlg, x509dn, cryptoToken.getPublicKey(alias), attrset, alias, cryptoToken.getSignProviderName());
+                log.trace("<createRequest");
+                return req.getEncoded();
+            }else{
                 final KeyPair keyPair = new KeyPair(cryptoToken.getPublicKey(alias), cryptoToken.getPrivateKey(alias));
                 req = CertTools.genPKCS10CertificationRequest(signAlg, x509dn, keyPair.getPublic(), attrset, keyPair.getPrivate(), cryptoToken.getSignProviderName());
                 log.trace("<createRequest");
                 return req.getEncoded();
-        }else{
-            req = CertTools.genPKCS10CertificationRequest(signAlg, x509dn, cryptoToken.getPublicKey(alias), attrset, alias, cryptoToken.getSignProviderName());
-            log.trace("<createRequest");
-            return req.getEncoded();
-        }
+            }
         } catch (CryptoTokenOfflineException e) { // NOPMD, since we catch wide below
             throw e;
         } catch (Exception e) {
@@ -1151,7 +1158,13 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
         final int purpose = getUseNextCACert(request) ? CATokenConstants.CAKEYPURPOSE_CERTSIGN_NEXT : CATokenConstants.CAKEYPURPOSE_CERTSIGN;
         final PublicKey caPublicKey = cryptoToken.getPublicKey(catoken.getAliasFromPurpose(purpose));
 
-        if(caPublicKey.getAlgorithm() == "Ed25519"){
+        String lib = null;
+        String[] parts = cryptoToken.getSignProviderName().split("-");
+        if (parts.length > 1){
+            lib = parts[1];
+        }
+
+        if(caPublicKey.getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
         return generateCertificateEd25519(subject, request, publicKey, catoken.getAliasFromPurpose(purpose)  , keyusage, notBefore, notAfter, certProfile, extensions,
             caPublicKey, certGenParams, cceConfig, /*linkCertificate=*/false, /*caNameChange=*/false, cryptoToken.getSignProviderName());
 
@@ -2774,7 +2787,13 @@ public class X509CAImpl extends CABase implements Serializable, X509CA {
 
         String alias = getCAToken().getAliasFromPurpose(CATokenConstants.CAKEYPURPOSE_CRLSIGN);
 
-        if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519"){
+        String lib = null;
+        String[] parts = cryptoToken.getSignProviderName().split("-");
+        if (parts.length > 1){
+            lib = parts[1];
+        }
+        
+        if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
             final X509CRLHolder crl;
 
             crl = generateCRLEd25519(cryptoToken, crlPartitionIndex, certs, crlPeriod, crlnumber, isDeltaCRL, basecrlnumber, partitionCaCert, validFrom, cryptoToken.getSignProviderName());

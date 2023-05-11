@@ -143,9 +143,20 @@ public abstract class BaseCryptoToken implements CryptoToken {
     @Override
     public void testKeyPair(final String alias) throws InvalidKeyException, CryptoTokenOfflineException { // NOPMD:this is not a junit test
         final PublicKey publicKey = getPublicKey(alias);
-        PrivateKey privateKey = null;
         
-        if(publicKey != null && !(publicKey.getAlgorithm() == "Ed25519")){
+        Provider p = getKeyStore().getProvider();
+        String lib = null;
+        PrivateKey privateKey = null;
+
+        String[] parts = p.getName().split("-");
+        if (parts.length > 1){
+            lib = p.getName().split("-")[1];
+        }
+        
+        if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so")))){
+            
+            privateKey = null;
+        }else{
             privateKey = getPrivateKey(alias); 
         }
 
@@ -161,7 +172,15 @@ public abstract class BaseCryptoToken implements CryptoToken {
             log.debug("The key '" + alias + "' will be tested using the provider '" + getSignProviderName() + "'.");
         }
 
-        if(publicKey != null && !(publicKey.getAlgorithm() == "Ed25519")){
+        String lib = null;
+        String[] parts = getSignProviderName().split("-");
+        if (parts.length > 1){
+            lib = parts[1];
+        }
+        System.out.println(getSignProviderName());
+        if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519") && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
+            KeyTools.testKey(alias, publicKey, getSignProviderName());
+        }else{
             if (!permitExtractablePrivateKeyForTest() && KeyTools.isPrivateKeyExtractable(privateKey)) {
                 String msg = intres.getLocalizedMessage("token.extractablekey", CesecoreConfiguration.isPermitExtractablePrivateKeys());
                 if (!CesecoreConfiguration.isPermitExtractablePrivateKeys()) {
@@ -171,8 +190,6 @@ public abstract class BaseCryptoToken implements CryptoToken {
             }
 
             KeyTools.testKey(privateKey, publicKey, getSignProviderName());
-        }else{
-            KeyTools.testKey(alias, publicKey, getSignProviderName());
         }
         
     }

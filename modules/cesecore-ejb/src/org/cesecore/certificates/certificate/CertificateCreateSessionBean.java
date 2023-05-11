@@ -232,7 +232,13 @@ public class CertificateCreateSessionBean implements CertificateCreateSessionLoc
             }
             CertificateDataWrapper certWrapper = createCertificate(admin, endEntityInformation, ca, requestMessage, reqpk, keyusage, notBefore, notAfter, exts, sequence, certGenParams, updateTime);
             // Create the response message with all nonces and checks etc
-            if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519"){
+            String lib = null;
+            String[] parts = cryptoToken.getSignProviderName().split("-");
+            if (parts.length > 1){
+                lib = parts[1];
+            }
+
+            if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
                 ret = ResponseMessageUtils.createResponseMessage(responseClass, requestMessage, cachain, null, cryptoToken.getEncProviderName());
             }else{
                 ret = ResponseMessageUtils.createResponseMessage(responseClass, requestMessage, cachain, cryptoToken.getPrivateKey(alias), cryptoToken.getEncProviderName());

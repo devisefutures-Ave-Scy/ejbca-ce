@@ -338,12 +338,22 @@ public class KeyStoreTools {
         switch (keySpec) {
         case AlgorithmConstants.KEYALGORITHM_ED25519:   
             try {
-                Ed25519 ed = new Ed25519();
+                String lib = null;
                 Provider p = this.keyStore.getProvider();
-                final X509Certificate selfSignedCert = ed.generateEd25519(keyAlias, p.getName());
-                final X509Certificate chain[] = new X509Certificate[]{selfSignedCert};
-               
-                this.getKeyStore().setAliasEntry(keyAlias,chain);
+                String[] parts = p.getName().split("-");
+                if (parts.length > 1){
+                    lib = p.getName().split("-")[1];
+                }
+                
+                if(lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
+                    Ed25519 ed = new Ed25519();
+                    final X509Certificate selfSignedCert = ed.generateEd25519(keyAlias, p.getName());
+                    final X509Certificate chain[] = new X509Certificate[]{selfSignedCert};
+                    this.getKeyStore().setAliasEntry(keyAlias,chain);
+                }else{
+                    generateKeyPair(null, keyAlias, AlgorithmConstants.KEYALGORITHM_ED25519, AlgorithmTools.SIG_ALGS_ED25519);
+                }
+                
             } catch (InvalidKeyException | CertificateException | IOException | KeyStoreException e) {
                 // TODO Auto-generated catch block
                 e.printStackTrace();
