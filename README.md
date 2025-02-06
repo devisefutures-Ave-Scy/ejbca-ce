@@ -29,3 +29,7 @@ Gryphus Gripsholms CA is licensed under the LGPL license, please see **[LICENSE]
 ## Related projects
 
 * [Gryphus Gripsholms CA performance tests](https://github.com/GryphusID/ejbca-performance-tests) 
+
+## Acknowledgment
+
+The Gryphus Gripsholms CA is developed and maintained by the consortium Aventra/Scytales and partners.
