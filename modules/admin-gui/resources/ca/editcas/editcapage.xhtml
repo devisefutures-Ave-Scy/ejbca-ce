@@ -1588,7 +1588,9 @@
 					<f:validator validatorId="org.ejbca.ui.web.admin.ca.validators.CRLFieldValidator"/>
 					</h:inputText>	
 						&nbsp;
+
 					<h:outputText styleClass="help" value="#{web.text.YEAR365DAYS}  ,  #{web.text.MO30DAYS}" />
+
 					<br />
 					<h:outputLabel value="#{web.text.CRL_CA_DELTACRLPERIOD_HELP}" styleClass="smallHelp" />
 				</h:panelGroup>
@@ -1608,6 +1610,7 @@
 								   value="#{web.text.USE}" />
 					<br />
 					<h:outputLabel value="#{web.text.CRL_CA_GENERATEUPONREVOCATION_HELP}" styleClass="smallHelp" />
+
 				</h:panelGroup>
 
 				<!-- Allow changing revocation reason -->
@@ -1621,6 +1624,7 @@
 											 disabled="#{not editCAsMBean.hasEditRight}">
 					</h:selectBooleanCheckbox>
 					<h:outputLabel for="checkboxallowchangingrevocationreason" value="#{web.text.USE}" />
+
 				</h:panelGroup>
 
 				<!-- Publishers -->

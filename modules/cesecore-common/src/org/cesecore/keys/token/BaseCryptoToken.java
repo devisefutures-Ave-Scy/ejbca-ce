@@ -43,6 +43,7 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.util.encoders.Hex;
 import org.cesecore.config.CesecoreConfiguration;
 import org.cesecore.internal.InternalResources;
+import org.cesecore.keys.util.Ed25519;
 import org.cesecore.keys.util.KeyTools;
 import org.cesecore.util.CertTools;
 import org.cesecore.util.StringTools;
@@ -65,7 +66,7 @@ public abstract class BaseCryptoToken implements CryptoToken {
     private String mJcaProviderName = null;
     /** Used for encrypt/decrypt, can be same as for signatures for example for pkcs#11 */
     private String mJceProviderName = null;
-    
+
     private char[] mAuthCode;
 
     private Properties properties;
@@ -141,9 +142,26 @@ public abstract class BaseCryptoToken implements CryptoToken {
     
     @Override
     public void testKeyPair(final String alias) throws InvalidKeyException, CryptoTokenOfflineException { // NOPMD:this is not a junit test
-        final PrivateKey privateKey = getPrivateKey(alias);
         final PublicKey publicKey = getPublicKey(alias);
+        
+        Provider p = getKeyStore().getProvider();
+        String lib = null;
+        PrivateKey privateKey = null;
+
+        String[] parts = p.getName().split("-");
+        if (parts.length > 1){
+            lib = p.getName().split("-")[1];
+        }
+        
+        if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so")))){
+            
+            privateKey = null;
+        }else{
+            privateKey = getPrivateKey(alias); 
+        }
+
         testKeyPair(alias, publicKey, privateKey);
+        
     }
 
     @Override
@@ -153,14 +171,27 @@ public abstract class BaseCryptoToken implements CryptoToken {
                     + CertTools.getFingerprintAsString(publicKey.getEncoded()) + ").");
             log.debug("The key '" + alias + "' will be tested using the provider '" + getSignProviderName() + "'.");
         }
-        if (!permitExtractablePrivateKeyForTest() && KeyTools.isPrivateKeyExtractable(privateKey)) {
-            String msg = intres.getLocalizedMessage("token.extractablekey", CesecoreConfiguration.isPermitExtractablePrivateKeys());
-            if (!CesecoreConfiguration.isPermitExtractablePrivateKeys()) {
-                throw new InvalidKeyException(msg);
-            }
-            log.info(msg);
+
+        String lib = null;
+        String[] parts = getSignProviderName().split("-");
+        if (parts.length > 1){
+            lib = parts[1];
         }
-        KeyTools.testKey(privateKey, publicKey, getSignProviderName());
+        System.out.println(getSignProviderName());
+        if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519") && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
+            KeyTools.testKey(alias, publicKey, getSignProviderName());
+        }else{
+            if (!permitExtractablePrivateKeyForTest() && KeyTools.isPrivateKeyExtractable(privateKey)) {
+                String msg = intres.getLocalizedMessage("token.extractablekey", CesecoreConfiguration.isPermitExtractablePrivateKeys());
+                if (!CesecoreConfiguration.isPermitExtractablePrivateKeys()) {
+                    throw new InvalidKeyException(msg);
+                }
+                log.info(msg);
+            }
+
+            KeyTools.testKey(privateKey, publicKey, getSignProviderName());
+        }
+        
     }
 
     @Override

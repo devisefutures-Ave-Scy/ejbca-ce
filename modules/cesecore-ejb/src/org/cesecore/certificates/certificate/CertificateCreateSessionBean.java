@@ -230,10 +230,19 @@ public class CertificateCreateSessionBean implements CertificateCreateSessionLoc
                     sequence = new String(ki);                  
                 }
             }
-            
             CertificateDataWrapper certWrapper = createCertificate(admin, endEntityInformation, ca, requestMessage, reqpk, keyusage, notBefore, notAfter, exts, sequence, certGenParams, updateTime);
-            // Create the response message with all nonces and checks etc            
-            ret = ResponseMessageUtils.createResponseMessage(responseClass, requestMessage, cachain, cryptoToken.getPrivateKey(alias), cryptoToken.getEncProviderName());
+            // Create the response message with all nonces and checks etc
+            String lib = null;
+            String[] parts = cryptoToken.getSignProviderName().split("-");
+            if (parts.length > 1){
+                lib = parts[1];
+            }
+
+            if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
+                ret = ResponseMessageUtils.createResponseMessage(responseClass, requestMessage, cachain, null, cryptoToken.getEncProviderName());
+            }else{
+                ret = ResponseMessageUtils.createResponseMessage(responseClass, requestMessage, cachain, cryptoToken.getPrivateKey(alias), cryptoToken.getEncProviderName());
+            }            
             ResponseStatus status = ResponseStatus.SUCCESS;
             FailInfo failInfo = null;
             String failText = null;
@@ -422,6 +431,7 @@ public class CertificateCreateSessionBean implements CertificateCreateSessionLoc
         logSession.log(EventTypes.CERT_REQUEST, EventStatus.SUCCESS, ModuleTypes.CERTIFICATE, ServiceTypes.CORE, admin.toString(),
                 String.valueOf(ca.getCAId()), null, endEntityInformation.getUsername(), details);
         
+        log.info(details);
         // Retrieve the certificate profile this user should have, checking for authorization to the profile
         final int certProfileId = endEntityInformation.getCertificateProfileId();
         final CertificateProfile certProfile = getCertificateProfile(certProfileId, ca.getCAId());
@@ -588,6 +598,7 @@ public class CertificateCreateSessionBean implements CertificateCreateSessionLoc
                         throw new CertificateCreateException(ErrorCode.INVALID_CERTIFICATE, e);
                     }
                 }
+
                 
                 cafingerprint = CertTools.getFingerprintAsString(ca.getCACertificate());
                 serialNo = CertTools.getSerialNumberAsString(cert);

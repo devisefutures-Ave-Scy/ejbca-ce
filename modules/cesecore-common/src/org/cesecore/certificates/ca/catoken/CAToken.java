@@ -16,14 +16,22 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.net.URL;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Properties;
 
+import org.apache.commons.configuration2.PropertiesConfiguration;
+import org.apache.commons.configuration2.convert.DefaultListDelimiterHandler;
+import org.apache.commons.configuration2.convert.ListDelimiterHandler;
+import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
+import org.cesecore.config.ConfigurationHolder;
 import org.cesecore.internal.InternalResources;
 import org.cesecore.internal.UpgradeableDataHashMap;
 import org.cesecore.keys.token.CryptoToken;
@@ -235,6 +243,44 @@ public class CAToken extends UpgradeableDataHashMap {
 
     /** @return the reference to the CA's CryptoToken */
     public int getCryptoTokenId() {
+
+        List<Object> id_before_obj = new ArrayList<>();
+        List<Object> id_after_obj = new ArrayList<>();
+
+        List<Integer> id_before = new ArrayList<>();
+        List<Integer> id_after = new ArrayList<>();
+
+        try {
+            final URL url = ConfigurationHolder.class.getResource("/conf/cesecore.properties");
+            if (url != null) {
+                final PropertiesConfiguration pc = ConfigurationHolder.loadProperties(url);
+                ListDelimiterHandler delimiter = new DefaultListDelimiterHandler(',');
+                pc.setListDelimiterHandler(delimiter);
+
+                id_before_obj = pc.getList("ca.IDsBefore", null);
+                log.debug("List of IDs to be changed: " + id_before);
+                
+                id_after_obj = pc.getList("ca.IDsAfter", null);
+                log.debug("List of IDs to be changed to : " + id_after);
+            }
+        } catch (ConfigurationException e) {
+            log.error("Error initializing environment for changing CA CryptoToken ID: ", e);
+        }
+
+        //CAToken token = this;
+
+        if(id_before_obj != null && id_after_obj != null && !id_before_obj.isEmpty() && !id_after_obj.isEmpty() && id_before.size() == id_after.size()){
+            for(Object s : id_before_obj) id_before.add(Integer.parseInt((String) s));
+            for(Object s : id_after_obj) id_after.add(Integer.parseInt((String) s));
+
+            if(id_before.contains(cryptoTokenId)){
+                int index = id_before.indexOf(cryptoTokenId);
+
+                log.info("Changing Crypto Token ID: " + cryptoTokenId + " to " + (int) id_after.get(index));
+                setCryptoTokenId((int) id_after.get(index));
+            }
+        }
+
         return cryptoTokenId;
     }
     /** Set the reference to the CA's CryptoToken. Use with care! */

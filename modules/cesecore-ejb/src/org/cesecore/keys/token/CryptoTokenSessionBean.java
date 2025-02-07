@@ -36,6 +36,7 @@ import org.cesecore.jndi.JndiConstants;
 import org.cesecore.keybind.InternalKeyBindingMgmtSessionLocal;
 import org.cesecore.keybind.KeyBindingFinder;
 import org.cesecore.keys.token.p11.exception.NoSuchSlotException;
+import org.cesecore.keys.util.Ed25519;
 import org.cesecore.util.CryptoProviderTools;
 import org.cesecore.util.QueryResultWrapper;
 
@@ -183,6 +184,7 @@ public class CryptoTokenSessionBean implements CryptoTokenSessionLocal, CryptoTo
             // soft crypto tokens will), the crypto token will be reloaded and most likely get deactivated on other cluster nodes (when it is reloaded there). 
             // We don't want that, so don't update the database contents if it's not needed.
             // We only check for empty "tokenDataAsBytes", which is what it is on HSM crypto tokens, don't want to compare binary byte arrays here
+            
             if (StringUtils.equals(tokenName, cryptoTokenData.getTokenName()) && StringUtils.equals(tokenType, cryptoTokenData.getTokenType()) 
                     && tokenProperties.equals(cryptoTokenData.getTokenProperties()) 
                     && ArrayUtils.isEmpty(tokenDataAsBytes) && ArrayUtils.isEmpty(cryptoTokenData.getTokenDataAsBytes())) {
@@ -215,6 +217,7 @@ public class CryptoTokenSessionBean implements CryptoTokenSessionLocal, CryptoTo
 
     @Override
     public boolean removeCryptoToken(final int cryptoTokenId) {
+        Ed25519.removeTokenFromCache(getCryptoToken(cryptoTokenId).getSignProviderName(), getCryptoToken(cryptoTokenId).getTokenName());
         final boolean ret = deleteCryptoTokenData(cryptoTokenId);
         CryptoTokenCache.INSTANCE.updateWith(cryptoTokenId, 0, null, null);
         return ret;

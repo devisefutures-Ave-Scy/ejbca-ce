@@ -87,16 +87,26 @@ public class CachingKeyStoreWrapper {
             this.certificateChain = oldEntry.certificateChain;
             this.key = keyStore.getKey(alias, password);
         }
+
         public KeyStoreMapEntry( final Certificate certificate ) {
             this.key = null;
             this.isTrusted = true;
             this.certificateChain = new Certificate[] { certificate };
         }
+
         public KeyStoreMapEntry( final Certificate[] chain, final Key k ) {
             this.key = k;
             this.isTrusted = false;
             this.certificateChain = chain;
         }
+
+        public KeyStoreMapEntry( final Certificate[] chain) {
+            this.key = null;
+            this.isTrusted = false;
+            this.certificateChain = chain;
+        }
+
+
         public KeyStoreMapEntry(
                 final String alias, final ProtectionParameter protection,
                 final KeyStore keyStore )
@@ -155,6 +165,11 @@ public class CachingKeyStoreWrapper {
                 }
             }
         }
+
+        public void addAlias(final String alias) throws KeyStoreException {
+            this.cache.put(fixBadUTF8(alias), new KeyStoreMapEntry(alias, keyStore));
+        }
+
         public void addEntry(final String alias, final  KeyStoreMapEntry newEntry) {
             final HashMap<String, KeyStoreMapEntry> clone = new HashMap<>(this.cache);
             clone.put(alias, newEntry);
@@ -299,6 +314,13 @@ public class CachingKeyStoreWrapper {
             log.debug("Updated key entry in cache for alias: " + alias);
         }
     }
+
+    /** @see java.security.KeyStore#setKeyEntry(String, Key, char[], Certificate[]) */
+    public void setAliasEntry(final String alias,  final Certificate[] chain) throws KeyStoreException {
+        final KeyStoreMapEntry keyStoreMapEntry = new KeyStoreMapEntry(chain);
+        this.keyStoreCache.addEntry(alias, keyStoreMapEntry);
+    }
+
 
     /** @see java.security.KeyStore#deleteEntry(String) */
     public void deleteEntry(final String alias) throws KeyStoreException {

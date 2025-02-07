@@ -135,6 +135,8 @@ public final class KeyTools {
     private static final Logger log = Logger.getLogger(KeyTools.class);
     private static final InternalResources intres = InternalResources.getInstance();
 
+    
+
     private static final byte[] BAG_ATTRIBUTES = "Bag Attributes\n".getBytes();
     private static final byte[] FRIENDLY_NAME = "    friendlyName: ".getBytes();
     private static final byte[] SUBJECT_ATTRIBUTE = "subject=/".getBytes();
@@ -1295,6 +1297,7 @@ public final class KeyTools {
                 }
                 log.debug(sw.toString());
             }
+
             {
                 final SignDataOperation operation = new SignDataOperation(priv, input);
                 // Candidate algorithms. The first working one will be selected by SignWithWorkingAlgorithm
@@ -1309,6 +1312,7 @@ public final class KeyTools {
                     log.debug("Created signature of size: " + signBV.length);
                     log.debug("Created signature: " + new String(Hex.encode(signBV)));
                 }
+            
             }
             {
                 final Signature signature;
@@ -1323,9 +1327,68 @@ public final class KeyTools {
                     throw new InvalidKeyException("Signature was not correctly verified.");
                 }
             }
+
         } catch (InvalidKeyException e) {
             throw e;
         } catch (TaskWithSigningException | SignatureException e) {
+            throw new InvalidKeyException(String.format("Exception testing key: %s", e.getMessage()), e);
+        }
+    }
+
+/**
+     * Testing a key pair to verify that it is possible to first sign and then verify with it.
+     * 
+     * @param alias
+     *            key alias
+     * @param pub
+     *            public key to verify the signature with
+     * @param providerName
+     *            Name of the provider used for signing with.
+     * @throws InvalidKeyException
+     *             if the public key can not be used to verify a string signed by the private key, because the key is wrong or the signature operation
+     *             fails for other reasons such as a NoSuchAlgorithmException or SignatureException.
+     *             if the provider is not installed.
+     */
+    public static void testKey(String alias,final PublicKey pub, String providerName) throws InvalidKeyException { // NOPMD:this is not a junit test
+        final byte input[] = "Lillan gick pa vagen ut, motte dar en katt...".getBytes();
+        final byte signBV[];
+        try {
+            if (log.isDebugEnabled()) {
+                final StringWriter sw = new StringWriter();
+                try( final PrintWriter pw = new PrintWriter(sw) ) {
+                    pw.println("Testing a key:");
+                    pw.println(String.format("\tTesting keys with algorithm: %s", pub.getAlgorithm()));
+                    pw.println(String.format("\tpublicKey: %s", pub));
+                    pw.println(String.format("\tpublicKey class: %s", pub.getClass().getName()));
+                    pw.flush();
+                }
+                log.debug(sw.toString());
+            }
+            
+            /** Used for Ed25519 in Jacknji11  */
+            Ed25519 ed = new Ed25519();
+
+            signBV = ed.sign(alias, input, providerName);
+            
+            {
+            
+                final Signature signature;
+                try {
+                    signature = Signature.getInstance("Ed25519", "BC");
+                } catch (NoSuchProviderException | NoSuchAlgorithmException e) {
+                    throw new IllegalStateException("BouncyCastle was not found as a provider.", e);
+                }
+                signature.initVerify(pub);
+                signature.update(input);
+                if (!signature.verify(signBV)) {
+                    throw new InvalidKeyException("Signature was not correctly verified.");
+                }else{
+                    log.info("Ed25519 Passed Signature Verification");
+                }
+            }
+        } catch (InvalidKeyException e) {
+            throw e;
+        } catch (SignatureException e) {
             throw new InvalidKeyException(String.format("Exception testing key: %s", e.getMessage()), e);
         }
     }
@@ -1386,6 +1449,7 @@ public final class KeyTools {
     public static boolean isPrivateKeyExtractable(final PrivateKey privK) {
         if (privK instanceof RSAPrivateKey) {
             final RSAPrivateKey rsa = (RSAPrivateKey) privK;
+            
             final BigInteger result = rsa.getPrivateExponent();
             return result != null && result.bitLength() > 0;
         }

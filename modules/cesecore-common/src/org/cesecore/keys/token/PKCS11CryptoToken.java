@@ -21,7 +21,9 @@ import org.cesecore.keys.token.p11.P11SlotUser;
 import org.cesecore.keys.token.p11.Pkcs11SlotLabel;
 import org.cesecore.keys.token.p11.Pkcs11SlotLabelType;
 import org.cesecore.keys.token.p11.exception.NoSuchSlotException;
+import org.cesecore.keys.util.Ed25519;
 import org.cesecore.keys.util.KeyStoreTools;
+import org.cesecore.keys.util.Ed25519.HsmInformation;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -152,6 +154,15 @@ public class PKCS11CryptoToken extends BaseCryptoToken implements P11SlotUser {
         try {
             final KeyStore newKeyStore = createKeyStore(authCode);
             setKeyStore(newKeyStore);
+            if(this.p11slot != null && this.p11slot.getProvider().getName() != null ){
+                HsmInformation hsmCache = Ed25519.updateHsmInfoCache(this.p11slot.getProvider().getName(), getTokenName(), this.sSlotLabel, String.valueOf(authCode), this.p11slot.getSharedLibrary());
+                Ed25519.noCertFix(this.p11slot.getProvider().getName());
+                for(String alias : getAliases()){
+                    if(getPublicKey(alias).getAlgorithm() == "Ed25519"){
+                        Ed25519.updateKeypairCache(alias, hsmCache);
+                    }
+                }
+            }
         } catch (Throwable t) { // NOPMD: when dealing with HSMs we need to catch everything
             log.warn("Failed to initialize PKCS11 provider slot '" + this.sSlotLabel + "'.", t);
             CryptoTokenAuthenticationFailedException authfe = new CryptoTokenAuthenticationFailedException(
@@ -199,6 +210,9 @@ public class PKCS11CryptoToken extends BaseCryptoToken implements P11SlotUser {
     @Override
     public void deactivate() {
         try {
+            if(this.p11slot != null && getTokenName() != null){
+                Ed25519.removeTokenFromCache(getP11slot().getProvider().getName(), getTokenName());
+            }
             setKeyStore(null);
         } catch (KeyStoreException e) {
             // Exception should only be thrown if loading a non-null KeyStore fails

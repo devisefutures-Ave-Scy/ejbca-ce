@@ -17,6 +17,7 @@ import java.security.cert.X509Certificate;
 import java.util.Collection;
 import java.util.List;
 
+import org.bouncycastle.asn1.x509.V3TBSCertificateGenerator;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.cesecore.certificates.certificate.CertificateCreateException;
 import org.cesecore.certificates.certificateprofile.CertificateProfile;
@@ -73,6 +74,11 @@ public interface CertificateTransparency {
      * Adds a critical extension to prevent the certificate from being used
      */
     void addPreCertPoison(X509v3CertificateBuilder precertbuilder);
+
+      /**
+     * Adds a critical extension to prevent the certificate from being used
+     */
+    void addPreCertPoison(V3TBSCertificateGenerator precertbuilder);
 
     /**
      * Returns true if the given certificate has an SCT extension with at least one entry.

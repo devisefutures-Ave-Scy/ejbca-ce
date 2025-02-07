@@ -736,7 +736,6 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
         if (cainfo.getStatus() == CAConstants.CA_UNINITIALIZED) {
             throw new IllegalStateException("This method should never be called on uninitialized CAs");
         }
-
         final int caid = cainfo.getCAId();
         List<Certificate> certificatechain = createCertificateChain(admin, ca, cryptoToken, certprofile);
         int castatus = getCaStatus(cainfo);
@@ -816,8 +815,11 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
                     log.debug("CAAdminSessionBean : " + cainfo.getSubjectDN());
                 }
                 EndEntityInformation cadata = makeEndEntityInformation(cainfo);
+                
                 cacertificate = ca.generateCertificate(cryptoToken, cadata, cryptoToken.getPublicKey(aliasCertSign), -1, null,
                         cainfo.getEncodedValidity(), certprofile, sequence, cceConfig);
+
+                
                 if (log.isDebugEnabled()) {
                     log.debug("CAAdminSessionBean : " + CertTools.getSubjectDN(cacertificate));
                 }
@@ -1496,7 +1498,16 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
                     log.debug("SubjectKeyId for CA next public key: "
                             + new String(Hex.encode(KeyTools.createSubjectKeyId(cryptoToken.getPublicKey(nextKeyAlias)).getKeyIdentifier())));
                 }
-                KeyTools.testKey(cryptoToken.getPrivateKey(nextKeyAlias), caCertPublicKey, cryptoToken.getSignProviderName());
+                String lib = null;
+                String[] parts = cryptoToken.getSignProviderName().split("-");
+                if (parts.length > 1){
+                    lib = parts[1];
+                }
+                if(cryptoToken.getPublicKey(nextKeyAlias).getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
+                    KeyTools.testKey(nextKeyAlias, caCertPublicKey, cryptoToken.getSignProviderName());
+                }else{
+                    KeyTools.testKey(cryptoToken.getPrivateKey(nextKeyAlias), caCertPublicKey, cryptoToken.getSignProviderName());
+                }
             } catch (InvalidKeyException e) {
                 throw new EjbcaException(ErrorCode.INVALID_KEY, e);
             }

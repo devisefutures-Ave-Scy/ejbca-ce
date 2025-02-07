@@ -22,6 +22,7 @@ import java.math.BigInteger;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
@@ -40,11 +41,11 @@ import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.security.spec.AlgorithmParameterSpec;
 import java.security.spec.ECGenParameterSpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Collections;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
-
 import javax.crypto.KeyGenerator;
 
 import org.apache.commons.lang.StringUtils;
@@ -59,6 +60,9 @@ import org.bouncycastle.crypto.ec.CustomNamedCurves;
 import org.bouncycastle.jcajce.provider.asymmetric.util.ECUtil;
 import org.bouncycastle.jcajce.spec.EdDSAParameterSpec;
 import org.bouncycastle.jce.ECKeyUtil;
+import org.bouncycastle.jce.ECNamedCurveTable;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.openssl.PKCS8Generator;
 import org.bouncycastle.operator.BufferingContentSigner;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.ContentVerifierProvider;
@@ -75,6 +79,9 @@ import org.cesecore.keys.token.CachingKeyStoreWrapper;
 import org.cesecore.keys.token.KeyGenParams;
 import org.cesecore.keys.token.p11.PKCS11Utils;
 import org.cesecore.util.CertTools;
+import org.hibernate.sql.Alias;
+import org.cesecore.keys.util.Ed25519;
+import org.pkcs11.jacknji11.*;
 
 /**
  * @version $Id$
@@ -116,6 +123,7 @@ public class KeyStoreTools {
 
     private void deleteAlias(String alias) throws KeyStoreException {
         getKeyStore().deleteEntry(alias);
+
     }
     /** Deletes an entry in the keystore
      *
@@ -321,14 +329,36 @@ public class KeyStoreTools {
         }
     }
 
+
     private void generateEdDSA(final String keySpec, final String keyAlias) throws InvalidAlgorithmParameterException {
         if (log.isTraceEnabled()) {
             log.trace(">generate: keySpec " + keySpec+ ", keyEntryName " + keyAlias);
         }
         // Generate the EdDSA Keypair
         switch (keySpec) {
-        case AlgorithmConstants.KEYALGORITHM_ED25519:
-            generateKeyPair(null, keyAlias, AlgorithmConstants.KEYALGORITHM_ED25519, AlgorithmTools.SIG_ALGS_ED25519);
+        case AlgorithmConstants.KEYALGORITHM_ED25519:   
+            try {
+                String lib = null;
+                Provider p = this.keyStore.getProvider();
+                String[] parts = p.getName().split("-");
+                if (parts.length > 1){
+                    lib = p.getName().split("-")[1];
+                }
+                
+                if(lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
+                    Ed25519 ed = new Ed25519();
+                    final X509Certificate selfSignedCert = ed.generateEd25519(keyAlias, p.getName());
+                    final X509Certificate chain[] = new X509Certificate[]{selfSignedCert};
+                    this.getKeyStore().setAliasEntry(keyAlias,chain);
+                }else{
+                    generateKeyPair(null, keyAlias, AlgorithmConstants.KEYALGORITHM_ED25519, AlgorithmTools.SIG_ALGS_ED25519);
+                }
+                
+            } catch (InvalidKeyException | CertificateException | IOException | KeyStoreException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+            //generateKeyPair(null, keyAlias, AlgorithmConstants.KEYALGORITHM_ED25519, AlgorithmTools.SIG_ALGS_ED25519);
             break;
         case AlgorithmConstants.KEYALGORITHM_ED448:
             generateKeyPair(null, keyAlias, AlgorithmConstants.KEYALGORITHM_ED448, AlgorithmTools.SIG_ALGS_ED448);
