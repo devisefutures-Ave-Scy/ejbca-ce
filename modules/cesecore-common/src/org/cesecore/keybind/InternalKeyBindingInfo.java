@@ -15,6 +15,7 @@ package org.cesecore.keybind;
 import java.io.IOException;
 import java.io.Serializable;
 import java.security.KeyPair;
+import java.security.PublicKey;
 import java.security.cert.Certificate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -240,6 +241,12 @@ public class InternalKeyBindingInfo implements InternalKeyBinding {
         throw new UnsupportedOperationException();
     }
 
+    @Override
+    public byte[] generateCsrForNextKeyPairEd25519(String providerName, PublicKey publicKey, String signatureAlgorithm, X500Name subjectDn, String alias)
+            throws IOException, OperatorCreationException {
+        throw new UnsupportedOperationException();
+    }
+    
     public String getRetentionPeriod() {
         return retentionPeriod;
     }
