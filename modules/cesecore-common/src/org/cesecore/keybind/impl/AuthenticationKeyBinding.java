@@ -14,6 +14,7 @@ package org.cesecore.keybind.impl;
 
 import java.io.IOException;
 import java.security.KeyPair;
+import java.security.PublicKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
@@ -148,6 +149,14 @@ public class AuthenticationKeyBinding extends InternalKeyBindingBase {
             throws IOException, OperatorCreationException {
         return CertTools
                 .genPKCS10CertificationRequest(signatureAlgorithm, subjectDn, keyPair.getPublic(), new DERSet(), keyPair.getPrivate(), providerName)
+                .getEncoded();
+    }
+
+    @Override
+    public byte[] generateCsrForNextKeyPairEd25519(String providerName, PublicKey publicKey, String signatureAlgorithm, X500Name subjectDn, String alias)
+            throws IOException, OperatorCreationException {
+        return CertTools
+                .genPKCS10CertificationRequest(signatureAlgorithm, subjectDn, publicKey, new DERSet(), alias, providerName)
                 .getEncoded();
     }
 }

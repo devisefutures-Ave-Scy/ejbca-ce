@@ -13,18 +13,26 @@
 package org.cesecore.keybind.impl;
 
 import org.apache.log4j.Logger;
+import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERNull;
+import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.ocsp.OCSPObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.Extensions;
 import org.bouncycastle.asn1.x509.ExtensionsGenerator;
 import org.bouncycastle.asn1.x509.KeyPurposeId;
 import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.asn1.x509.SubjectKeyIdentifier;
 import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
 import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.ASN1OctetString;
+import org.bouncycastle.asn1.pkcs.Attribute;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
@@ -40,6 +48,7 @@ import org.cesecore.util.ui.DynamicUiProperty;
 import java.io.IOException;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
@@ -354,5 +363,69 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
         final ContentSigner contentSigner = new JcaContentSignerBuilder(signatureAlgorithm).setProvider(providerName).build(keyPair.getPrivate());
         final PKCS10CertificationRequest csr = pkcs10CertificationRequestBuilder.build(contentSigner);
         return csr.getEncoded();
+    }
+
+    @Override
+    public byte[] generateCsrForNextKeyPairEd25519(final String providerName, final PublicKey publicKey, final String signatureAlgorithm,
+            final X500Name subjectDn, String alias) throws IOException, NoSuchAlgorithmException, OperatorCreationException {
+                System.out.println("Reached OcspKeyBinding generateCsrForNextKeyPair");
+
+        final KeyPurposeId[] ocspKeyPurposeId = new KeyPurposeId[] { KeyPurposeId.id_kp_OCSPSigning };
+        final SubjectKeyIdentifier subjectKeyIdentifier = new JcaX509ExtensionUtils()
+                .createSubjectKeyIdentifier(publicKey);
+
+        
+        KeyUsage keyUsage = new KeyUsage(KeyUsage.digitalSignature);
+        boolean isCritical = true;
+
+        ASN1OctetString keyUsageOctetString = new DEROctetString(keyUsage.getEncoded(ASN1Encoding.DER));
+
+        Extension keyUsageExtension = new Extension(Extension.keyUsage, isCritical, keyUsageOctetString);
+
+        //Extensions extensions = new Extensions(new Extension[]{keyUsageExtension});
+
+
+        Extension subjectKeyIdentifierExtension = new Extension(
+            Extension.subjectKeyIdentifier,
+            false, // Non-critical
+            // Use the provided object's key identifier bytes
+            new DEROctetString(subjectKeyIdentifier.getKeyIdentifier())
+        );
+
+        ExtendedKeyUsage extendedKeyUsage = new ExtendedKeyUsage(ocspKeyPurposeId);
+        Extension extendedKeyUsageExtension = new Extension(
+            Extension.extendedKeyUsage,
+            false, // Non-critical
+            new DEROctetString(extendedKeyUsage.getEncoded(ASN1Encoding.DER))
+        );
+
+        ASN1ObjectIdentifier ocspNoCheckOid = OCSPObjectIdentifiers.id_pkix_ocsp_nocheck;
+        DERNull ocspNoCheckValue = DERNull.INSTANCE;
+        Extension ocspNocheckExtension = new Extension(
+            ocspNoCheckOid,
+            false, // Non-critical
+            new DEROctetString(ocspNoCheckValue.getEncoded(ASN1Encoding.DER))
+        );
+
+        Extensions extensions = new Extensions(new Extension[]{
+            keyUsageExtension,
+            subjectKeyIdentifierExtension,
+            extendedKeyUsageExtension,
+            ocspNocheckExtension
+        });
+
+
+        Attribute extensionAttribute = new Attribute(
+            PKCSObjectIdentifiers.pkcs_9_at_extensionRequest,
+            new DERSet(extensions) 
+        );
+        ASN1Set attributesSet = new DERSet(extensionAttribute);
+
+
+        return CertTools
+                .genPKCS10CertificationRequest(signatureAlgorithm, subjectDn, publicKey, attributesSet, alias, providerName)
+                .getEncoded();
+
+        
     }
 }

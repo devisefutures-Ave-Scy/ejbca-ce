@@ -636,17 +636,36 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                     + ocspKeyBinding.getId());
             return null;
         }
+        String alias = null;
         final PrivateKey privateKey;
-        try {
-            privateKey = cryptoToken.getPrivateKey(ocspKeyBinding.getKeyPairAlias());
-        } catch (CryptoTokenOfflineException e) {
+        PublicKey publicKey;
+        
+        try{
+            publicKey = cryptoToken.getPublicKey(ocspKeyBinding.getKeyPairAlias());
+        }catch (CryptoTokenOfflineException e) {
             log.warn("Referenced private key with alias " + ocspKeyBinding.getKeyPairAlias() + " could not be used. CryptoToken is off-line for OcspKeyBinding with id "+ocspKeyBinding.getId()+": " + e.getMessage());
             return null;
         }
-        if (privateKey == null) {
-            log.warn("Referenced private key with alias " + ocspKeyBinding.getKeyPairAlias() + " does not exist. Ignoring OcspKeyBinding with id "+ ocspKeyBinding.getId());
-            return null;
+
+        if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519")){
+            alias = ocspKeyBinding.getKeyPairAlias();
+            
+            privateKey = null;
+
+        }else{
+            try {
+                privateKey = cryptoToken.getPrivateKey(ocspKeyBinding.getKeyPairAlias());
+            } catch (CryptoTokenOfflineException e) {
+                log.warn("Referenced private key with alias " + ocspKeyBinding.getKeyPairAlias() + " could not be used. CryptoToken is off-line for OcspKeyBinding with id "+ocspKeyBinding.getId()+": " + e.getMessage());
+                return null;
+            }
+            if (privateKey == null) {
+                log.warn("Referenced private key with alias " + ocspKeyBinding.getKeyPairAlias() + " does not exist. Ignoring OcspKeyBinding with id "+ ocspKeyBinding.getId());
+                return null;
+            }
         }
+
+        
         final String signatureProviderName = cryptoToken.getSignProviderName();
         if (log.isDebugEnabled()) {
             log.debug("Adding OcspKeyBinding "+ocspKeyBinding.getId()+", "+ocspKeyBinding.getName());
@@ -659,7 +678,7 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
             respIdType = OcspKeyBinding.ResponderIdType.KEYHASH;
         }
         return new OcspSigningCacheEntry(caCertificateChain.get(0), certificateStatus, caCertificateChain, ocspSigningCertificate, privateKey,
-                signatureProviderName, ocspKeyBinding, respIdType,null);
+                signatureProviderName, ocspKeyBinding, respIdType,alias);
     }
     
     /** 
