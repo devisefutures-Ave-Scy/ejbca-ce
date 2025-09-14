@@ -695,6 +695,21 @@ public abstract class AlgorithmTools {
      */
     public static String getEncSigAlgFromSigAlg(final String signatureAlgorithm, final PublicKey publicKey ) {
        
+        // Handle null signatureAlgorithm gracefully - this can occur when importing 
+        // RSASSA-PSS CAs where the signature algorithm detection fails in getSignatureAlgorithm()
+        // See ECA-XXXX: Fix NullPointerException during RSASSA-PSS CA import
+        if (signatureAlgorithm == null) {
+            // Fallback to safe defaults based on the public key type
+            if (publicKey instanceof RSAPublicKey) {
+                return AlgorithmConstants.SIGALG_SHA256_WITH_RSA;
+            } else if (publicKey instanceof ECPublicKey) {
+                return AlgorithmConstants.SIGALG_SHA256_WITH_ECDSA;
+            } else {
+                // Default fallback for unknown key types
+                return AlgorithmConstants.SIGALG_SHA256_WITH_RSA;
+            }
+        }
+        
         String encSigAlg = signatureAlgorithm;
        
 
@@ -993,7 +1008,27 @@ public abstract class AlgorithmTools {
                 signatureAlgorithm = AlgorithmConstants.SIGALG_GOST3411_WITH_DSTU4145;
             }
         }
+        // Fallback check for RSASSA-PSS certificates not caught by above logic
+        // Some HSMs or certificate formats may return non-standard algorithm names
+        // that contain PSS or MGF indicators but don't match our expected patterns
+        // See ECA-XXXX: Improve RSASSA-PSS algorithm detection for CA imports
+        if (signatureAlgorithm == null && publickey instanceof RSAPublicKey) {
+            String certAlgoLower = certSignatureAlgorithm.toLowerCase();
+            if (certAlgoLower.contains("pss") || certAlgoLower.contains("mgf")) {
+                // Default to SHA256 variant as it's the most common
+                signatureAlgorithm = AlgorithmConstants.SIGALG_SHA256_WITH_RSA_AND_MGF1;
+                if (log.isDebugEnabled()) {
+                    log.debug("Applied fallback RSASSA-PSS detection for unrecognized format: " + certSignatureAlgorithm);
+                }
+            }
+        }
         if (log.isDebugEnabled()) {
+            if (signatureAlgorithm == null) {
+                // Log details about unrecognized algorithms to help diagnose future issues
+                log.debug("getSignatureAlgorithm returning null for unrecognized algorithm: " + 
+                         certSignatureAlgorithm + " with key type: " + 
+                         (publickey != null ? publickey.getClass().getSimpleName() : "null"));
+            }
             log.debug("getSignatureAlgorithm: " + signatureAlgorithm);
         }
         return signatureAlgorithm;
