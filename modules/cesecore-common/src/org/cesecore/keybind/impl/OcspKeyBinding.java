@@ -48,6 +48,7 @@ import org.cesecore.util.ui.DynamicUiProperty;
 import java.io.IOException;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateParsingException;
@@ -58,46 +59,46 @@ import java.util.Map;
 
 /**
  * Holder of "external" (e.g. non-CA signing key) OCSP InternalKeyBinding properties.
- * 
+ *
  * @version $Id$
  */
 public class OcspKeyBinding extends InternalKeyBindingBase {
-  
+
     private static final long serialVersionUID = 1L;
     private static final Logger log = Logger.getLogger(OcspKeyBinding.class);
 
     public enum ResponderIdType {
         KEYHASH(2, "KeyHash"), NAME(1, "Name");
-        
+
         private final int numericValue;
         private final String label;
         private static Map<Integer, ResponderIdType> numericValueLookupMap = new HashMap<>();
         private static Map<String, ResponderIdType> labelLookupMap = new HashMap<>();
-        
+
         static {
             for (ResponderIdType responderIdType : ResponderIdType.values()) {
                 numericValueLookupMap.put(responderIdType.getNumericValue(), responderIdType);
                 labelLookupMap.put(responderIdType.getLabel(), responderIdType);
             }
         }
-        
+
         private ResponderIdType(int numericValue, String label) {
             this.numericValue = numericValue;
             this.label = label;
         }
-        
+
         public int getNumericValue() {
             return numericValue;
         }
-        
+
         public String getLabel() {
             return label;
         }
-        
+
         public static ResponderIdType getFromNumericValue(int numericValue) {
             return numericValueLookupMap.get(numericValue);
         }
-        
+
         public static ResponderIdType getFromLabel(final String label) {
             return labelLookupMap.get(label);
         }
@@ -115,10 +116,10 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
     public static final String PROPERTY_UNTIL_NEXT_UPDATE = "untilNextUpdate";
     public static final String PROPERTY_MAX_AGE = "maxAge";
     public static final String PROPERTY_ENABLE_NONCE = "enableNonce";
-    public static final String PROPERTY_OMIT_REASON_CODE_WHEN_REVOCATION_REASON_UNSPECIFIED = "omitreasoncodewhenrevocationreasonunspecified"; 
+    public static final String PROPERTY_OMIT_REASON_CODE_WHEN_REVOCATION_REASON_UNSPECIFIED = "omitreasoncodewhenrevocationreasonunspecified";
     public static final String PROPERTY_USE_ISSUER_NOTBEFORE_AS_ARCHIVE_CUTOFF = "useIssuerNotBeforeAsArchiveCutoff";
     public static final String PROPERTY_RETENTION_PERIOD = "retentionPeriod";
-    
+
     {
         addProperty(new DynamicUiProperty<>(PROPERTY_NON_EXISTING_GOOD, Boolean.FALSE));
         addProperty(new DynamicUiProperty<>(PROPERTY_NON_EXISTING_REVOKED, Boolean.FALSE));
@@ -135,12 +136,12 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
 
     }
 
-    
+
     @Override
     public String getImplementationAlias() {
         return IMPLEMENTATION_ALIAS;
     }
-    
+
     @Override
     public float getLatestVersion() {
         return serialVersionUID;
@@ -150,7 +151,7 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
     protected void upgrade(float latestVersion, float currentVersion) {
         // Nothing to do
     }
-    
+
     @Override
     public void assertCertificateCompatability(final Certificate certificate, final AvailableExtendedKeyUsagesConfiguration ekuConfig) throws CertificateImportException {
         assertCertificateCompatabilityInternal(certificate, ekuConfig);
@@ -217,7 +218,7 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
     public void setMaxAge(long maxAge) {
         setProperty(PROPERTY_MAX_AGE, maxAge);
     }
-    
+
     /** @return true if NONCE's are to be used in replies */
     public boolean isNonceEnabled() {
         if(getProperty(PROPERTY_ENABLE_NONCE) == null) {
@@ -225,13 +226,13 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
         }
         return (Boolean) getProperty(PROPERTY_ENABLE_NONCE).getValue();
     }
-    /** 
+    /**
      * @param enabled as true of NONCE's are to be included in replies
      *  */
     public void setNonceEnabled(boolean enabled) {
         setProperty(PROPERTY_ENABLE_NONCE, enabled);
     }
-    
+
     /** @return true if the revocation reason to be omitted if specified */
     public boolean isOmitReasonCodeEnabled() {
         if(getProperty(PROPERTY_OMIT_REASON_CODE_WHEN_REVOCATION_REASON_UNSPECIFIED) == null) {
@@ -243,7 +244,7 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
     public void setOmitReasonCodeEnabled(boolean enabled) {
         setProperty(PROPERTY_OMIT_REASON_CODE_WHEN_REVOCATION_REASON_UNSPECIFIED, enabled);
     }
-    
+
     /** Helper method to check if the OCSP Archive CutOff extension is enabled. Used by Configdump */
     public boolean isOcspArchiveCutOffExtensionEnabled() {
         return getOcspExtensions().stream().anyMatch(enabledOcspExtension -> OCSPObjectIdentifiers.id_pkix_ocsp_archive_cutoff.getId().equals(enabledOcspExtension));
@@ -251,11 +252,11 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
 
     /**
      * Get the retention period being enforced by the CA. The date obtained by subtracting this
-     * retention interval value from the producedAt time in a response is defined as the 
+     * retention interval value from the producedAt time in a response is defined as the
      * certificate's "archive cutoff" date.
-     * 
+     *
      * <p>If nothing is specified for this OCSP key binding, the default value of 1 year is used.
-     * 
+     *
      * @return the retention period for archive cutoff.
      */
     public SimpleTime getRetentionPeriod() {
@@ -265,7 +266,7 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
 
     /**
      * Set the retention period being enforced by the CA. See also {@link #getRetentionPeriod()}.
-     * 
+     *
      * @param retentionPeriod the new retention period to use for archive cutoff.
      */
     public void setRetentionPeriod(final SimpleTime retentionPeriod) {
@@ -276,12 +277,12 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
      * Get a boolean indicating whether the notBefore date of the issuer of the certificate being queried for,
      * should be used as archive cutoff date in OCSP responses, when the archiveCutoff extension is enabled
      * (instead of deriving the archive cutoff date from the producedAt time of the OCSP response).
-     * 
+     *
      * <p>This setting should be enabled to conform with ETSI EN 319 411-2, CSS-6.3.10-08.
-     * 
+     *
      * <p>If nothing is specified for this OCSP key binding, the default value of false is returned
      * (do not use the issuer's notBefore date as archive cutoff date).
-     *  
+     *
      * @return true if the responder is using ETSI compliant archive cutoff dates.
      */
     public boolean getUseIssuerNotBeforeAsArchiveCutoff() {
@@ -292,7 +293,7 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
      * Set a boolean indicating whether the notBefore date of the issuer of the certificate being queried for,
      * should be used as archive cutoff date in OCSP responses, when the archiveCutoff extension is enabled.
      * See also {@link #getUseIssuerNotBeforeAsArchiveCutoff()}.
-     * 
+     *
      * @param useIssuerNotBeforeAsArchiveCutoff true to enable this setting, false otherwise.
      */
     public void setUseIssuerNotBeforeAsArchiveCutoff(final boolean useIssuerNotBeforeAsArchiveCutoff) {
@@ -368,27 +369,22 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
     @Override
     public byte[] generateCsrForNextKeyPairEd25519(final String providerName, final PublicKey publicKey, final String signatureAlgorithm,
             final X500Name subjectDn, String alias) throws IOException, NoSuchAlgorithmException, OperatorCreationException {
-                System.out.println("Reached OcspKeyBinding generateCsrForNextKeyPair");
+        log.debug("Generating Ed25519 CSR for OCSP key binding with provider: " + providerName);
 
         final KeyPurposeId[] ocspKeyPurposeId = new KeyPurposeId[] { KeyPurposeId.id_kp_OCSPSigning };
         final SubjectKeyIdentifier subjectKeyIdentifier = new JcaX509ExtensionUtils()
                 .createSubjectKeyIdentifier(publicKey);
 
-        
+        // Build OCSP-specific extensions
         KeyUsage keyUsage = new KeyUsage(KeyUsage.digitalSignature);
         boolean isCritical = true;
 
         ASN1OctetString keyUsageOctetString = new DEROctetString(keyUsage.getEncoded(ASN1Encoding.DER));
-
         Extension keyUsageExtension = new Extension(Extension.keyUsage, isCritical, keyUsageOctetString);
-
-        //Extensions extensions = new Extensions(new Extension[]{keyUsageExtension});
-
 
         Extension subjectKeyIdentifierExtension = new Extension(
             Extension.subjectKeyIdentifier,
             false, // Non-critical
-            // Use the provided object's key identifier bytes
             new DEROctetString(subjectKeyIdentifier.getKeyIdentifier())
         );
 
@@ -414,18 +410,126 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
             ocspNocheckExtension
         });
 
-
         Attribute extensionAttribute = new Attribute(
             PKCSObjectIdentifiers.pkcs_9_at_extensionRequest,
-            new DERSet(extensions) 
+            new DERSet(extensions)
         );
         ASN1Set attributesSet = new DERSet(extensionAttribute);
 
+        // Detect provider type to determine signing approach
+        final boolean isUtimacoHsm = providerName != null &&
+            (providerName.contains("libcs2_pkcs11.so") || providerName.contains("libcs_pkcs11_R2.so"));
 
-        return CertTools
-                .genPKCS10CertificationRequest(signatureAlgorithm, subjectDn, publicKey, attributesSet, alias, providerName)
-                .getEncoded();
+        if (isUtimacoHsm) {
+            // For Utimaco HSM: Use the custom Ed25519.sign() method via CertTools
+            log.debug("Using Utimaco HSM Ed25519 signing path");
+            return CertTools
+                    .genPKCS10CertificationRequest(signatureAlgorithm, subjectDn, publicKey, attributesSet, alias, providerName)
+                    .getEncoded();
+        } else {
+            // For soft tokens (BouncyCastle): This path requires private key which we don't have
+            // This is a limitation of the current method signature - the private key needs to be passed
+            log.error("Soft token Ed25519 CSR generation requires private key, but current method signature does not support it.");
+            throw new OperatorCreationException("Ed25519 CSR generation for soft tokens requires private key access. " +
+                    "Please use the overloaded method that accepts a PrivateKey parameter.");
+        }
+    }
 
-        
+    /**
+     * Generate CSR for Ed25519 key pair with explicit private key support for soft tokens.
+     * This method supports both HSM (Utimaco) and soft token (BouncyCastle) providers.
+     *
+     * @param providerName the crypto provider name
+     * @param publicKey the public key
+     * @param privateKey the private key (can be null for HSM)
+     * @param signatureAlgorithm the signature algorithm
+     * @param subjectDn the subject DN
+     * @param alias the key alias (used for HSM signing)
+     * @return the encoded CSR bytes
+     * @throws IOException if encoding fails
+     * @throws NoSuchAlgorithmException if algorithm is not supported
+     * @throws OperatorCreationException if content signer creation fails
+     */
+    public byte[] generateCsrForNextKeyPairEd25519(final String providerName, final PublicKey publicKey, final PrivateKey privateKey,
+            final String signatureAlgorithm, final X500Name subjectDn, String alias)
+            throws IOException, NoSuchAlgorithmException, OperatorCreationException {
+        log.debug("Generating Ed25519 CSR for OCSP key binding with provider: " + providerName);
+
+        final KeyPurposeId[] ocspKeyPurposeId = new KeyPurposeId[] { KeyPurposeId.id_kp_OCSPSigning };
+        final SubjectKeyIdentifier subjectKeyIdentifier = new JcaX509ExtensionUtils()
+                .createSubjectKeyIdentifier(publicKey);
+
+        // Build OCSP-specific extensions
+        KeyUsage keyUsage = new KeyUsage(KeyUsage.digitalSignature);
+        boolean isCritical = true;
+
+        ASN1OctetString keyUsageOctetString = new DEROctetString(keyUsage.getEncoded(ASN1Encoding.DER));
+        Extension keyUsageExtension = new Extension(Extension.keyUsage, isCritical, keyUsageOctetString);
+
+        Extension subjectKeyIdentifierExtension = new Extension(
+            Extension.subjectKeyIdentifier,
+            false, // Non-critical
+            new DEROctetString(subjectKeyIdentifier.getKeyIdentifier())
+        );
+
+        ExtendedKeyUsage extendedKeyUsage = new ExtendedKeyUsage(ocspKeyPurposeId);
+        Extension extendedKeyUsageExtension = new Extension(
+            Extension.extendedKeyUsage,
+            false, // Non-critical
+            new DEROctetString(extendedKeyUsage.getEncoded(ASN1Encoding.DER))
+        );
+
+        ASN1ObjectIdentifier ocspNoCheckOid = OCSPObjectIdentifiers.id_pkix_ocsp_nocheck;
+        DERNull ocspNoCheckValue = DERNull.INSTANCE;
+        Extension ocspNocheckExtension = new Extension(
+            ocspNoCheckOid,
+            false, // Non-critical
+            new DEROctetString(ocspNoCheckValue.getEncoded(ASN1Encoding.DER))
+        );
+
+        Extensions extensions = new Extensions(new Extension[]{
+            keyUsageExtension,
+            subjectKeyIdentifierExtension,
+            extendedKeyUsageExtension,
+            ocspNocheckExtension
+        });
+
+        Attribute extensionAttribute = new Attribute(
+            PKCSObjectIdentifiers.pkcs_9_at_extensionRequest,
+            new DERSet(extensions)
+        );
+        ASN1Set attributesSet = new DERSet(extensionAttribute);
+
+        // Detect provider type to determine signing approach
+        final boolean isUtimacoHsm = providerName != null &&
+            (providerName.contains("libcs2_pkcs11.so") || providerName.contains("libcs_pkcs11_R2.so"));
+
+        if (isUtimacoHsm) {
+            // For Utimaco HSM: Use the custom Ed25519.sign() method via CertTools
+            log.debug("Using Utimaco HSM Ed25519 signing path");
+            return CertTools
+                    .genPKCS10CertificationRequest(signatureAlgorithm, subjectDn, publicKey, attributesSet, alias, providerName)
+                    .getEncoded();
+        } else {
+            // For soft tokens (BouncyCastle): Use standard BouncyCastle ContentSigner
+            log.debug("Using BouncyCastle soft token Ed25519 signing path");
+
+            if (privateKey == null) {
+                throw new OperatorCreationException("Private key is required for soft token Ed25519 CSR generation");
+            }
+
+            // Use standard BouncyCastle PKCS10 builder with BouncyCastle provider
+            final String bcProvider = "BC"; // BouncyCastle provider
+            final PKCS10CertificationRequestBuilder csrBuilder = new JcaPKCS10CertificationRequestBuilder(subjectDn, publicKey)
+                    .addAttribute(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest, extensions);
+
+            // Create content signer with BouncyCastle provider
+            final ContentSigner contentSigner = new JcaContentSignerBuilder(signatureAlgorithm)
+                    .setProvider(bcProvider)
+                    .build(privateKey);
+
+            final PKCS10CertificationRequest csr = csrBuilder.build(contentSigner);
+            return csr.getEncoded();
+        }
     }
 }
