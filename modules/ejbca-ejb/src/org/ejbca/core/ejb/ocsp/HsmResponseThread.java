@@ -118,17 +118,15 @@ public class HsmResponseThread implements Callable<BasicOCSPResp> {
              * 
              * In high performance environments, the full OCSP response should in general be smaller than 1492 bytes to fit in a single
              * Ethernet frame.
-             * 
+             *
              * Lowering this allocation from 20480 to 4096 bytes under ECA-4084 which should still be plenty.
              */
 
-            String lib = null;
-            String[] parts = provider.split("-");
-            if (parts.length > 1){
-                lib = parts[1];
-            }
+            // Detect if this is a Utimaco HSM provider
+            final boolean isUtimacoHsm = provider != null &&
+                (provider.contains("libcs2_pkcs11.so") || provider.contains("libcs_pkcs11_R2.so"));
 
-            if(signingAlgorithm.equals("Ed25519") && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
+            if(signingAlgorithm.equals("Ed25519") && isUtimacoHsm){
 
                 Iterator it = responsesList.iterator();
 
