@@ -153,7 +153,7 @@ public abstract class BaseCryptoToken implements CryptoToken {
             lib = p.getName().split("-")[1];
         }
         
-        if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so")))){
+        if(publicKey != null && ("Ed25519".equals(publicKey.getAlgorithm()) && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so")))){
             
             privateKey = null;
         }else{
@@ -178,7 +178,7 @@ public abstract class BaseCryptoToken implements CryptoToken {
             lib = parts[1];
         }
         System.out.println(getSignProviderName());
-        if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519") && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
+        if(publicKey != null && ("Ed25519".equals(publicKey.getAlgorithm())) && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
             KeyTools.testKey(alias, publicKey, getSignProviderName());
         }else{
             if (!permitExtractablePrivateKeyForTest() && KeyTools.isPrivateKeyExtractable(privateKey)) {
