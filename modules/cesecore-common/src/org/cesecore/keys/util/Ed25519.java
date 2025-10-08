@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
@@ -42,6 +43,7 @@ import org.pkcs11.jacknji11.CKC;
 import org.pkcs11.jacknji11.CKK;
 import org.pkcs11.jacknji11.CKM;
 import org.pkcs11.jacknji11.CKO;
+import org.pkcs11.jacknji11.CKR;
 import org.pkcs11.jacknji11.CKRException;
 import org.pkcs11.jacknji11.CKU;
 import org.pkcs11.jacknji11.CK_SESSION_INFO;
@@ -261,6 +263,68 @@ public class Ed25519 {
 
     }
     
+    /**
+     * Signs and verifies data using the jacknji11 HSM interface.
+     * Uses the Ed25519 algorithm to sign example data with the private key
+     * and verify it with the corresponding public key.
+     *
+     * @param alias         Key alias in the HSM
+     * @param providerName  HSM provider name
+     * @return true if signature verification succeeds, false otherwise
+     */
+    public boolean validate_alias(String alias, String providerName) {
+
+        byte[] data = "Example data for signature validation".getBytes(StandardCharsets.UTF_8);
+        LongRef sessionRef = null;
+
+        try {
+            HsmInformation hsmInfo = hsmInfoCache.get(providerName);
+            sessionRef = hsmInfo.getSession();
+
+            LongRef privateKey = getPrivateKeyRef(alias, hsmInfo);
+            LongRef publicKey = getPublicKeyRef(alias, hsmInfo);
+
+            // Sign with Ed25519
+            C.SignInit(sessionRef.value(), new CKM(CKM.EDDSA), privateKey.value());
+            LongRef length = new LongRef();
+            C.Sign(sessionRef.value(), data, null, length);
+            byte[] signature = new byte[(int) length.value()];
+            C.Sign(sessionRef.value(), data, signature, length);
+
+            // Verify with public key
+            C.VerifyInit(sessionRef.value(), new CKM(CKM.EDDSA), publicKey.value());
+            C.Verify(sessionRef.value(), data, signature);
+
+            log.info("Signature verified successfully for alias: " + alias);
+            return true;
+
+        } catch (CKRException e) {
+            if (e.getCKR() == CKR.SIGNATURE_INVALID) {
+                log.warn("Signature verification failed (invalid signature) for alias: " + alias);
+            } else {
+                log.error("HSM PKCS#11 error during sign/verify for alias: " + alias, e);
+            }
+            return false;
+
+        } catch (Exception e) {
+            log.error("Unexpected error during validation for alias: " + alias, e);
+            return false;
+
+        } finally {
+            if (sessionRef != null) {
+                try {
+                    HsmInformation hsmInfo = hsmInfoCache.get(providerName);
+                    hsmInfo.releaseSession(sessionRef);
+                    log.debug("Released HSM session after sign/verify for alias: " + alias);
+                } catch (Exception ex) {
+                    log.warn("Failed to release HSM session for alias: " + alias, ex);
+                }
+            }
+        }
+    }
+
+
+
 
     /**
      * Signs data with C jacknji11 hsm implementation
