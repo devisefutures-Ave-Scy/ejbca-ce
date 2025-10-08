@@ -393,15 +393,17 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
                             final PrivateKey privateKey;
                             try {
                                 PublicKey publicKey = cryptoToken.getPublicKey(keyPairAlias);
-                                
-                                String lib = null;
-                                String[] parts = cryptoToken.getSignProviderName().split("-");
-                                if (parts.length > 1){
-                                    lib = parts[1];
-        }
-                                if(publicKey != null && publicKey.getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
-                                    privateKey = null;
+
+                                // Detect provider type for Ed25519 routing
+                                final String providerName = cryptoToken.getSignProviderName();
+                                final boolean isEd25519 = publicKey != null && "Ed25519".equals(publicKey.getAlgorithm());
+                                final boolean isUtimacoHsm = providerName != null &&
+                                    (providerName.contains("libcs2_pkcs11.so") || providerName.contains("libcs_pkcs11_R2.so"));
+
+                                if(isEd25519 && isUtimacoHsm){
+                                    privateKey = null;  // HSM path - uses Ed25519.sign()
                                 }else{
+                                    // Soft tokens and all other cases - need private key
                                     privateKey = cryptoToken.getPrivateKey(keyPairAlias);
 
                                     if (privateKey == null) {
@@ -647,12 +649,17 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
             return null;
         }
 
-        if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519")){
-            alias = ocspKeyBinding.getKeyPairAlias();
-            
-            privateKey = null;
+        // Detect provider type for Ed25519 routing
+        final String providerName = cryptoToken.getSignProviderName();
+        final boolean isEd25519 = publicKey != null && "Ed25519".equals(publicKey.getAlgorithm());
+        final boolean isUtimacoHsm = providerName != null &&
+            (providerName.contains("libcs2_pkcs11.so") || providerName.contains("libcs_pkcs11_R2.so"));
 
+        if(isEd25519 && isUtimacoHsm){
+            alias = ocspKeyBinding.getKeyPairAlias();
+            privateKey = null;  // HSM path - uses Ed25519.sign()
         }else{
+            // Soft tokens and all other cases - need private key
             try {
                 privateKey = cryptoToken.getPrivateKey(ocspKeyBinding.getKeyPairAlias());
             } catch (CryptoTokenOfflineException e) {

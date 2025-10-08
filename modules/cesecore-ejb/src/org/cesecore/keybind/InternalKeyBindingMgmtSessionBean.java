@@ -622,10 +622,18 @@ public class InternalKeyBindingMgmtSessionBean implements InternalKeyBindingMgmt
         final String signatureAlgorithm = internalKeyBinding.getSignatureAlgorithm();
         final CryptoToken cryptoToken = cryptoTokenManagementSession.getCryptoToken(cryptoTokenId);
 
+        // Determine if we should use HSM-specific Ed25519 path (Utimaco only) or standard path
+        final String providerName = cryptoToken.getSignProviderName();
+        final boolean isEd25519 = publicKey != null && "Ed25519".equals(publicKey.getAlgorithm());
+        final boolean isUtimacoHsm = providerName != null &&
+            (providerName.contains("libcs2_pkcs11.so") || providerName.contains("libcs_pkcs11_R2.so"));
+
         PrivateKey privateKey = null;
-        if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519" )){
+        if(isEd25519 && isUtimacoHsm){
+            // For Utimaco HSM Ed25519, we use the custom Ed25519 signing path (no private key needed)
             privateKey = null;
         }else{
+            // For soft tokens and all other cases, get the private key
             privateKey = cryptoToken.getPrivateKey(keyPairAlias);
         }
 
@@ -660,12 +668,19 @@ public class InternalKeyBindingMgmtSessionBean implements InternalKeyBindingMgmt
             }
         }
         try {
-            if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519" )){
-                return internalKeyBinding.generateCsrForNextKeyPairEd25519(cryptoToken.getSignProviderName(), publicKey,
+            if(isEd25519 && isUtimacoHsm){
+                // For Utimaco HSM Ed25519, use the HSM-specific path
+                return internalKeyBinding.generateCsrForNextKeyPairEd25519(providerName, publicKey,
+                    signatureAlgorithm, x500Name, keyPairAlias);
+            }
+            else if(isEd25519 && internalKeyBinding instanceof OcspKeyBinding){
+                // For soft token Ed25519 with OcspKeyBinding, use the overloaded method with private key
+                return ((OcspKeyBinding) internalKeyBinding).generateCsrForNextKeyPairEd25519(providerName, publicKey, privateKey,
                     signatureAlgorithm, x500Name, keyPairAlias);
             }
             else{
-                return internalKeyBinding.generateCsrForNextKeyPair(cryptoToken.getSignProviderName(), new KeyPair(publicKey, privateKey),
+                // For all other cases, use standard CSR generation
+                return internalKeyBinding.generateCsrForNextKeyPair(providerName, new KeyPair(publicKey, privateKey),
                         signatureAlgorithm, x500Name);
             }
         } catch (OperatorCreationException | IOException | NoSuchAlgorithmException e) {

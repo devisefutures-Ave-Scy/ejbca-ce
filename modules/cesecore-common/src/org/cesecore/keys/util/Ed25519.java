@@ -58,7 +58,7 @@ public class Ed25519 {
 
     /**
      * Generates a keypair using C jacknji11 implementation
-     * 
+     *
      * @param keyAlias    key alias
      * @param providerName Name of the provider
      * @return X509Certificate
@@ -69,18 +69,18 @@ public class Ed25519 {
     public X509Certificate generateEd25519(final String keyAlias, String providerName) throws InvalidKeyException, CertificateException, IOException{
 
         HsmInformation hsmInfo = hsmInfoCache.get(providerName);
-        
+
         LongRef pubKey = new LongRef();
         LongRef privKey = new LongRef();
         generateKeyPairEd25519(hsmInfo, pubKey, privKey, keyAlias);
-        
+
         return generateSelfCertificate(pubKey, privKey, keyAlias, hsmInfo);
     }
 
 
     /**
      * Generates a public-key / private-key Ed25519 pair, creates new key objects.
-     * 
+     *
      * @param hsmInfo    HSM info cache
      * @param publicKey  handle of new public key
      * @param privateKey handle of new private key
@@ -122,8 +122,8 @@ public class Ed25519 {
                             new CKA(CKA.ID, keyalias.getBytes()),
             };
 
-        
-        
+
+
             C.GenerateKeyPair(sessionRef.value(), new CKM(CKM.ECDSA_KEY_PAIR_GEN), pubTempl, privTempl, publicKey, privateKey);
         } catch (CKRException rv) {
             hsmInfo.CloseSession(sessionRef);
@@ -131,16 +131,16 @@ public class Ed25519 {
         }finally{
             if(sessionRef != null){
                 hsmInfo.releaseSession(sessionRef);
-            }  
+            }
             log.info("Generated KeyPair with alias: " + keyalias);
         }
     }
 
     /**
      * Generates the EJBCA self certificate so keys can be recognized.
-     * 
+     *
      * @param pubKey Public key of the alias
-     * @param privKey Private key of the alias 
+     * @param privKey Private key of the alias
      * @param keyAlias Key Alias
      * @param hsmInfo Cache info
      * @return X509Certificate
@@ -153,7 +153,7 @@ public class Ed25519 {
         try {
             sessionRef = hsmInfo.getSession();
 
-        
+
             final long currentTime = new Date().getTime();
             final Date firstDate = new Date(currentTime - 24 * 60 * 60 * 1000);
             final Date lastDate = new Date(currentTime + (long) (30 * 24 * 60 * 60 * 365) * 1000);
@@ -174,7 +174,7 @@ public class Ed25519 {
                 new CKA(CKA.EC_POINT),
                 new CKA(CKA.EC_PARAMS)
             };
-            
+
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
             // allocate memory and call again
             for (int i = 0; i < templ.length; i++){
@@ -183,9 +183,9 @@ public class Ed25519 {
 
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
 
-            
+
             final CKA ecPoint = templ[0];
-            
+
             certGen.setIssuer(issuer);
             certGen.setSubject(issuer);
             certGen.setStartDate(new Time(firstDate));
@@ -206,7 +206,7 @@ public class Ed25519 {
             byte[] certBlock = bOut.toByteArray();
             byte[] signature;
 
-            
+
             // since the algorythm is Ed25519 there's no need to create a digest.
             C.SignInit(sessionRef.value(), new CKM(CKM.ECDSA), privKey.value());
 
@@ -244,7 +244,7 @@ public class Ed25519 {
                 new CKA(CKA.VALUE, cert.getEncoded())
             };
 
-            
+
             C.CreateObject(sessionRef.value(), certTemplate, certRef);
 
             updateKeypairCache(keyAlias, hsmInfo);
@@ -328,11 +328,11 @@ public class Ed25519 {
 
     /**
      * Signs data with C jacknji11 hsm implementation
-     * 
+     *
      * @param alias Key Alias
      * @param data data to sign
      * @param providerName Name of provider
-     * @return byte[] signed data 
+     * @return byte[] signed data
      */
 
     public byte[] sign(String alias, byte[] data, String providerName){
@@ -340,8 +340,18 @@ public class Ed25519 {
         HsmInformation hsmInfo = null;
         try {
             hsmInfo = hsmInfoCache.get(providerName);
+
+            // Defensive null check - this method only works with HSM providers
+            if (hsmInfo == null) {
+                throw new IllegalStateException(
+                    "HSM provider not initialized. The sign() method only works with HSM providers (e.g., Utimaco). " +
+                    "Provider '" + providerName + "' is not an HSM provider or has not been initialized via updateHsmInfoCache(). " +
+                    "Please ensure the HSM is properly configured and initialized before calling this method."
+                );
+            }
+
             sessionRef = hsmInfo.getSession();
-            
+
             if(!hsmInfo.KeyPairCache.containsKey(alias)){
                 updateKeypairCache(alias, hsmInfo);
             }
@@ -371,7 +381,7 @@ public class Ed25519 {
 
     /**
      * Removes a keypair from HSM and Cache
-     * 
+     *
      * @param alias Key Alias
      * @param providerName Name of provider
      */
@@ -382,7 +392,7 @@ public class Ed25519 {
         try {
             hsmInfo = hsmInfoCache.get(providerName);
             sessionRef = hsmInfo.getSession();
-        
+
 
             if(!hsmInfo.KeyPairCache.containsKey(alias)){
                 updateKeypairCache(alias,hsmInfo);
@@ -411,12 +421,12 @@ public class Ed25519 {
 
     /**
      * Initializes and fills Token Cache as well as update password on change
-     * 
+     *
      * @param providerName Name of token provider
      * @param tokenName Name of the token
      * @param slotLabel slot of the token
      * @param authCode authentication code
-     * @param sharedLibrary library path 
+     * @param sharedLibrary library path
      * @return Cache instance
      */
     public static synchronized HsmInformation updateHsmInfoCache(String providerName, String tokenName, String slotLabel, String authCode, String sharedLibrary){
@@ -427,7 +437,7 @@ public class Ed25519 {
                 hsmInf.setAuthCode(authCode);
 
                 LongRef sessionRef = new LongRef();
-        
+
                 C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
                 C.Initialize();
 
@@ -443,9 +453,9 @@ public class Ed25519 {
 
             return hsmInf;
         }else{
-        
+
             LongRef sessionRef = new LongRef();
-        
+
             C.NATIVE = new org.pkcs11.jacknji11.jna.JNA(sharedLibrary);
             C.Initialize();
 
@@ -460,10 +470,10 @@ public class Ed25519 {
 
     /**
      * Changes name of token in Cache
-     * 
+     *
      * @param providerName Name of current provider
      * @param oldTokenName Old Name
-     * @param newTokenName New Name 
+     * @param newTokenName New Name
      */
     public static synchronized void updateCachedName(String providerName, String oldTokenName, String newTokenName) {
         HsmInformation hsmInf = hsmInfoCache.get(providerName);
@@ -475,7 +485,7 @@ public class Ed25519 {
 
     /**
      * Removes a token from Cache
-     * 
+     *
      * @param providerName Name of provider
      * @param tokenName Name of the token
      */
@@ -493,7 +503,7 @@ public class Ed25519 {
 
     /**
      * Updates the Cache with keypairs
-     * 
+     *
      * @param alias Key Alias
      * @param hsmCache Cache
      */
@@ -510,7 +520,7 @@ public class Ed25519 {
             }
         }
     }
-        
+
 
     /**
      * Gets the LongRef of a Private Key through it's alias.
@@ -520,7 +530,7 @@ public class Ed25519 {
      */
     public static LongRef getPrivateKeyRef(String alias, HsmInformation hsmInfo){
         LongRef sessionRef = null;
-        
+
         try{
             sessionRef = hsmInfo.getSession();
 
@@ -553,7 +563,7 @@ public class Ed25519 {
      */
     public static LongRef getCertificateRef(String alias, HsmInformation hsmInfo){
         LongRef sessionRef = null;
-        
+
         try{
             sessionRef = hsmInfo.getSession();
 
@@ -586,14 +596,14 @@ public class Ed25519 {
      */
     public static String getID(LongRef pubKey, HsmInformation hsmInfo){
         LongRef sessionRef = null;
-        
+
         try{
             sessionRef = hsmInfo.getSession();
 
             CKA[] templ = new CKA[]{
                 new CKA(CKA.ID),
             };
-            
+
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
             // allocate memory and call again
             for (int i = 0; i < templ.length; i++){
@@ -623,7 +633,7 @@ public class Ed25519 {
      */
     public static LongRef getPublicKeyRef(String alias, HsmInformation hsmInfo){
         LongRef sessionRef = null;
-        
+
         try{
             sessionRef = hsmInfo.getSession();
 
@@ -657,14 +667,14 @@ public class Ed25519 {
      */
     public static String getAlgo(LongRef pubKey, HsmInformation hsmInfo){
         LongRef sessionRef = null;
-        
+
         try{
             sessionRef = hsmInfo.getSession();
 
             CKA[] templ = new CKA[]{
                 new CKA(CKA.KEY_TYPE),
             };
-            
+
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
             // allocate memory and call again
             for (int i = 0; i < templ.length; i++){
@@ -673,7 +683,7 @@ public class Ed25519 {
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
 
             final CKA algo = templ[0];
-            
+
             return CKK.L2S(algo.getValueLong());
 
         }catch (CKRException rv) {
@@ -695,14 +705,14 @@ public class Ed25519 {
      */
     public static String getECDSAparams(LongRef pubKey, HsmInformation hsmInfo){
         LongRef sessionRef = null;
-        
+
         try{
             sessionRef = hsmInfo.getSession();
 
             CKA[] templ = new CKA[]{
                 new CKA(CKA.EC_PARAMS),
             };
-            
+
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
             // allocate memory and call again
             for (int i = 0; i < templ.length; i++){
@@ -712,7 +722,7 @@ public class Ed25519 {
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
 
             final CKA params = templ[0];
-            
+
             return params.getValueStr();
         }catch (CKRException rv) {
             hsmInfo.CloseSession(sessionRef);
@@ -733,7 +743,7 @@ public class Ed25519 {
      */
     public static BigInteger getRsaModulus(LongRef pubKey, HsmInformation hsmInfo){
         LongRef sessionRef = null;
-        
+
         try{
             sessionRef = hsmInfo.getSession();
 
@@ -750,7 +760,7 @@ public class Ed25519 {
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
 
             final CKA mod = templ[0];
-            
+
             return mod.getValueBigInt();
         }catch (CKRException rv) {
             hsmInfo.CloseSession(sessionRef);
@@ -772,7 +782,7 @@ public class Ed25519 {
     public static BigInteger getRsaPublicExponent(LongRef pubKey, HsmInformation hsmInfo){
 
         LongRef sessionRef = null;
-        
+
         try{
             sessionRef = hsmInfo.getSession();
 
@@ -790,7 +800,7 @@ public class Ed25519 {
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
 
             final CKA exp = templ[0];
-            
+
             return exp.getValueBigInt();
 
         }catch (CKRException rv) {
@@ -813,14 +823,14 @@ public class Ed25519 {
     public static Long getRsaModulusBits(LongRef pubKey, HsmInformation hsmInfo){
 
         LongRef sessionRef = null;
-        
+
         try{
             sessionRef = hsmInfo.getSession();
 
             CKA[] templ = new CKA[]{
                 new CKA(CKA.MODULUS_BITS),
             };
-            
+
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
 
             // allocate memory and call again
@@ -831,7 +841,7 @@ public class Ed25519 {
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
 
             final CKA bits = templ[0];
-            
+
             return bits.getValueLong();
 
         }catch (CKRException rv) {
@@ -869,7 +879,7 @@ public class Ed25519 {
         private final LinkedList<LongRef> activeSessions = new LinkedList<>();
         private String sharedLibrary;
         private HashMap<String,KeyPairInfo> KeyPairCache;
-        
+
 
         public HsmInformation (String authcode, String slot, String tokenName, LongRef sessionRef, String sharedLibrary){
             this.authcode = authcode;
@@ -1036,7 +1046,7 @@ public class Ed25519 {
 
             long[] result = new long[(int) count];
             System.arraycopy(found, 0, result, 0, result.length);
-            
+
             C.FindObjectsFinal(sessionRef.value());
 
             for(long ref : result){
@@ -1070,12 +1080,12 @@ public class Ed25519 {
                 LongRef certificate = getCertificateRef(alias, hsmInfo);
 
                 if(algo.equals("EC")){
-                    
+
                     String ecParams = getECDSAparams(publicKey, hsmInfo);
-                    
+
                     if(ecParams.equals("edwards25519") && certificate.value == (long) 0 ){
                         String id = getID(publicKey, hsmInfo);
-                        
+
                         try {
                             generateSelfCertificateFix(publicKey, privateKey, alias, hsmInfo , id);
                         } catch (InvalidKeyException | CertificateException | IOException e) {
@@ -1086,7 +1096,7 @@ public class Ed25519 {
                 }else if(algo.equals("RSA") && certificate.value == (long) 0 ){
 
                     String id = getID(publicKey, hsmInfo);
-                        
+
                     try {
                         generateSelfCertificateFixRsa(publicKey, privateKey, alias, hsmInfo , id);
                     } catch (InvalidKeyException | CertificateException | IOException e) {
@@ -1109,7 +1119,7 @@ public class Ed25519 {
     /**
      * Copy of generateSelfCertificate above but used only for fixing certificates so it can have same IDs
      * @param pubKey Public key of the alias
-     * @param privKey Private key of the alias 
+     * @param privKey Private key of the alias
      * @param keyAlias Key Alias
      * @param hsmInfo Cache info
      * @param id public key ID
@@ -1143,7 +1153,7 @@ public class Ed25519 {
                 new CKA(CKA.EC_POINT),
                 new CKA(CKA.EC_PARAMS)
             };
-            
+
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
             // allocate memory and call again
             for (int i = 0; i < templ.length; i++){
@@ -1152,7 +1162,7 @@ public class Ed25519 {
             //templ[0].pValue = new byte[(int) templ[0].ulValueLen];
             C.GetAttributeValue(sessionRef.value(), pubKey.value(), templ);
             final CKA ecPoint = templ[0];
-            
+
             certGen.setIssuer(issuer);
             certGen.setSubject(issuer);
             certGen.setStartDate(new Time(firstDate));
@@ -1226,7 +1236,7 @@ public class Ed25519 {
         /**
      * Copy of generateSelfCertificate above but used only for fixing certificates so it can have same IDs. RSA version
      * @param pubKey Public key of the alias
-     * @param privKey Private key of the alias 
+     * @param privKey Private key of the alias
      * @param keyAlias Key Alias
      * @param hsmInfo Cache info
      * @param id public key ID
@@ -1263,7 +1273,7 @@ public class Ed25519 {
 
             RSAPublicKey pk = new RSAPublicKey(n, e);
 
-            
+
             certGen.setIssuer(issuer);
             certGen.setSubject(issuer);
             certGen.setStartDate(new Time(firstDate));
