@@ -25,6 +25,7 @@ import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
+import java.security.interfaces.RSAPublicKey;
 import java.security.SignatureException;
 import java.security.cert.CertPathValidatorException;
 import java.security.cert.Certificate;
@@ -3834,6 +3835,18 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
             // ignoring case so that SHA256WITHRSA matches SHA256WithRSA, and ECDSA matches SHA1WithECDSA (or SHA256WithECDSA)
             // But SHA1WithECDSA, or ECDSA does not match SHA1WithRSA, or Ed448, or... 
             boolean containsAlg = keySigAlgs.stream().anyMatch(x -> Strings.CI.contains(x, certSigAlg));
+            // Special handling for RSASSA-PSS certificates
+            // Some RSASSA-PSS certificates return "RSASSA-PSS" as the algorithm name instead of 
+            // the specific variant like "SHA256withRSAandMGF1". If this happens and the issuer 
+            // key is RSA, check if it supports any MGF1 variants.
+            // See ECA-XXXX: Fix RSASSA-PSS CA import compatibility check
+            if (!containsAlg && certSigAlg != null && "RSASSA-PSS".equalsIgnoreCase(certSigAlg) && issuerKey instanceof RSAPublicKey) {
+                // RSASSA-PSS is compatible with any RSA key that supports MGF1 variants
+                containsAlg = keySigAlgs.stream().anyMatch(x -> x.contains("MGF1"));
+                if (log.isDebugEnabled() && containsAlg) {
+                    log.debug("Matched RSASSA-PSS certificate with RSA key supporting MGF1 algorithms");
+                }
+            }            
             if (certSigAlg == null || !containsAlg) {
                 if (log.isDebugEnabled()) {
                     log.info("Not trying to verify certificate signed with algorithm " + certSigAlg + " because key is only suitable for " + keySigAlgs);
