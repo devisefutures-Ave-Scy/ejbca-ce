@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
 import java.security.cert.Certificate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -160,6 +161,9 @@ public interface InternalKeyBinding extends Serializable {
      * @throws OperatorCreationException if the provider cannot be found.
      */
     byte[] generateCsrForNextKeyPair(String providerName, KeyPair keyPair, String signatureAlgorithm, X500Name subjectDn)
+            throws IOException, OperatorCreationException, NoSuchAlgorithmException;
+
+    byte[] generateCsrForNextKeyPairEd25519(String providerName, PublicKey publicKey, String signatureAlgorithm, X500Name subjectDn, String alias)
             throws IOException, OperatorCreationException, NoSuchAlgorithmException;
 
     String getSubjectDn();

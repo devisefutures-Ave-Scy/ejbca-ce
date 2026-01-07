@@ -668,7 +668,14 @@ public class InternalKeyBindingMgmtSessionBean implements InternalKeyBindingMgmt
         final PublicKey publicKey = cryptoTokenManagementSession.getPublicKey(authenticationToken, cryptoTokenId, keyPairAlias).getPublicKey();
         final String signatureAlgorithm = internalKeyBinding.getSignatureAlgorithm();
         final CryptoToken cryptoToken = cryptoTokenManagementSession.getCryptoToken(cryptoTokenId);
-        final PrivateKey privateKey = cryptoToken.getPrivateKey(keyPairAlias);
+
+        PrivateKey privateKey = null;
+        if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519" )){
+            privateKey = null;
+        }else{
+            privateKey = cryptoToken.getPrivateKey(keyPairAlias);
+        }
+
         final X500Name x500Name;
         if (name != null) {
         	// If there was a parameter, use that
@@ -700,8 +707,14 @@ public class InternalKeyBindingMgmtSessionBean implements InternalKeyBindingMgmt
             }
         }
         try {
-            return internalKeyBinding.generateCsrForNextKeyPair(cryptoToken.getSignProviderName(), new KeyPair(publicKey, privateKey),
-                    signatureAlgorithm, x500Name);
+           if(publicKey != null && (publicKey.getAlgorithm() == "Ed25519" )){
+                return internalKeyBinding.generateCsrForNextKeyPairEd25519(cryptoToken.getSignProviderName(), publicKey,
+                    signatureAlgorithm, x500Name, keyPairAlias);
+            }
+            else{
+                return internalKeyBinding.generateCsrForNextKeyPair(cryptoToken.getSignProviderName(), new KeyPair(publicKey, privateKey),
+                        signatureAlgorithm, x500Name);
+            }
         } catch (OperatorCreationException | IOException | NoSuchAlgorithmException e) {
             log.info("CSR generation failed. internalKeyBindingId=" + internalKeyBindingId + ", cryptoTokenId=" + cryptoTokenId + ", keyPairAlias="
                     + keyPairAlias + ". " + e.getMessage());
