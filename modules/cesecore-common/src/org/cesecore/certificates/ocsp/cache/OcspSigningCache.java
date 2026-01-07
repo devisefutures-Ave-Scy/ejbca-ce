@@ -103,17 +103,19 @@ public enum OcspSigningCache {
         for (Integer key : staging.keySet()) {
             OcspSigningCacheEntry entry = staging.get(key);
             //If entry has been created without a private key, replace it with the default responder.
-            if (entry.isPlaceholder()) {
-                if (stagedDefaultResponder != null) {
-                    entry = new OcspSigningCacheEntry(entry.getIssuerCaCertificate(), entry.getIssuerCaCertificateStatus(),
-                            stagedDefaultResponder.getCaCertificateChain(), stagedDefaultResponder.getOcspSigningCertificate(),
-                            stagedDefaultResponder.getPrivateKey(), stagedDefaultResponder.getSignatureProviderName(),
-                            stagedDefaultResponder.getOcspKeyBinding(), stagedDefaultResponder.getResponderIdType());
-                    entry.setCrlSigningAlgorithm(stagedDefaultResponder.getCrlSigningAlgorithm());
-                    modifiedEntries.put(key, entry);
-                } else {
-                    //If no default responder is defined, remove placeholder.
-                    removedEntries.add(key);
+            if(entry.getIssuerCaCertificate().getPublicKey().getAlgorithm() != "Ed25519"){
+                if (entry.isPlaceholder()) {
+                    if (stagedDefaultResponder != null) {
+                        entry = new OcspSigningCacheEntry(entry.getIssuerCaCertificate(), entry.getIssuerCaCertificateStatus(),
+                                stagedDefaultResponder.getCaCertificateChain(), stagedDefaultResponder.getOcspSigningCertificate(),
+                                stagedDefaultResponder.getPrivateKey(), stagedDefaultResponder.getSignatureProviderName(),
+                                stagedDefaultResponder.getOcspKeyBinding(), stagedDefaultResponder.getResponderIdType(),null);
+                        entry.setCrlSigningAlgorithm(stagedDefaultResponder.getCrlSigningAlgorithm());
+                        modifiedEntries.put(key, entry);
+                    } else {
+                        //If no default responder is defined, remove placeholder.
+                        removedEntries.add(key);
+                    }
                 }
             }
         }

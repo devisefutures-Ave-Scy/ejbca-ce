@@ -41,6 +41,7 @@ import org.cesecore.audit.enums.EventTypes;
 import org.cesecore.audit.enums.ModuleTypes;
 import org.cesecore.audit.enums.ServiceTypes;
 import org.cesecore.audit.impl.integrityprotected.AuditRecordData;
+import org.cesecore.audit.log.AuditRecordStorageException;
 import org.cesecore.audit.log.SecurityEventsLoggerSessionLocal;
 import org.cesecore.authentication.tokens.AlwaysAllowLocalAuthenticationToken;
 import org.cesecore.authentication.tokens.AuthenticationToken;
@@ -63,6 +64,7 @@ import org.ejbca.config.GlobalConfiguration;
 import org.ejbca.core.ejb.audit.enums.EjbcaEventTypes;
 import org.ejbca.core.ejb.audit.enums.EjbcaModuleTypes;
 import org.ejbca.core.ejb.audit.enums.EjbcaServiceTypes;
+import org.ejbca.core.ejb.audit.XmlAuditExporter;
 import org.ejbca.core.ejb.authorization.AuthorizationSystemSessionLocal;
 import org.ejbca.core.ejb.ca.caadmin.CAAdminSessionLocal;
 import org.ejbca.core.ejb.ocsp.OcspResponseCleanupSessionLocal;
@@ -201,7 +203,7 @@ public class StartupSingletonBean {
             + "ifn1eHMbL8dGLd5bc2GNBZkmhFIEoDvbfn9jo7phlS8iyvF2YhC4eso8Xb+T7+BZ" + "QUOBOvc=").getBytes());
 
     @PostConstruct
-    private void startup() {
+    private void startup() throws AuditRecordStorageException, AuthorizationDeniedException {
         //
         // Run all "safe" initializations first,
         // i.e. those that does not depend on other running beans, components etc
@@ -412,6 +414,10 @@ public class StartupSingletonBean {
         // Start the clean up job to remove old OCSP responses
         log.debug(">startup start OCSP clean up job");
         ocspResponseCleanupSession.start();
+
+        // Start security audit logs
+        log.debug(">startup configure security audit logs");
+        XmlAuditExporter.startCustomLogging(authenticationToken, logSession);
 
         // Start the SCEP key renewal job, if SCEP is enabled
         log.debug(">startup start SCEP keys renewal job job");

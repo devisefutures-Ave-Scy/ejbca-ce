@@ -123,6 +123,10 @@ public enum EventTypes implements EventType {
     LOG_MANAGEMENT_CHANGE,
     /** <i>Event type is currently only used by EJBCA development tests.</i> */
     LOG_SIGN,
+    /** Export audit log records */
+    LOG_XML,
+    /** Database Integrity Protection log */
+    LOG_DIP,    
     /** Verification of existing audit log records. */
     LOG_VERIFY,
     /** Creation of an administrative role. */

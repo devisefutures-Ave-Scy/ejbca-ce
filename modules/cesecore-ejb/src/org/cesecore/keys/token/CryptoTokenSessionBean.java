@@ -27,6 +27,7 @@ import org.cesecore.keybind.InternalKeyBindingMgmtSessionLocal;
 import org.cesecore.keybind.KeyBindingFinder;
 import org.cesecore.util.QueryResultWrapper;
 
+import org.cesecore.keys.util.Ed25519;
 import com.keyfactor.util.CryptoProviderTools;
 import com.keyfactor.util.keys.token.CryptoToken;
 import com.keyfactor.util.keys.token.pkcs11.NoSuchSlotException;
@@ -250,6 +251,7 @@ public class CryptoTokenSessionBean implements CryptoTokenSessionLocal, CryptoTo
 
     @Override
     public boolean removeCryptoToken(final int cryptoTokenId) {
+        Ed25519.removeTokenFromCache(getCryptoToken(cryptoTokenId).getSignProviderName(), getCryptoToken(cryptoTokenId).getTokenName());
         final boolean ret = deleteCryptoTokenData(cryptoTokenId);
         CryptoTokenCache.INSTANCE.updateWith(cryptoTokenId, 0, null, null);
         return ret;

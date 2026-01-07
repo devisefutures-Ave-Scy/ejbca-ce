@@ -31,6 +31,7 @@ import org.cesecore.config.CesecoreConfiguration;
 import org.cesecore.internal.InternalResources;
 import org.cesecore.keybind.InternalKeyBindingMgmtSessionLocal;
 import org.cesecore.keybind.KeyBindingFinder;
+import org.cesecore.keys.util.Ed25519;
 import org.cesecore.keys.util.PublicKeyWrapper;
 
 import com.keyfactor.util.CryptoProviderTools;
@@ -536,6 +537,10 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
             newCryptoToken.setProperties(properties);
             newCryptoToken.setTokenName(tokenName);
         }
+
+        //Make Changes to Ed25519 Cache
+        Ed25519.updateCachedName(currentCryptoToken.getSignProviderName(), currentCryptoToken.getTokenName() , tokenName);
+
         final Map<String, Object> details = new LinkedHashMap<String, Object>();
         details.put("msg", "Modified CryptoToken with id " + cryptoTokenId);
         putDelta("name", currentCryptoToken.getTokenName(), newCryptoToken.getTokenName(), details);
@@ -875,7 +880,12 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
             final List<String> keyPairAliases = new ArrayList<>();
             for (final String currentAlias : cryptoToken.getAliases()) {
                 try {
-                    if (cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.doesPrivateKeyExist(currentAlias)) {
+                    String lib = null;
+                    String[] parts = cryptoToken.getSignProviderName().split("-");
+                    if (parts.length > 1){
+                        lib = parts[1];
+                    }
+                    if ((cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.getPublicKey(currentAlias).getAlgorithm() == "Ed25519") && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so")) || (cryptoToken.getPublicKey(currentAlias) != null && cryptoToken.doesPrivateKeyExist(currentAlias) ) ) {
                         keyPairAliases.add(currentAlias);
                     } else {
                         if (log.isDebugEnabled()) {
@@ -1002,6 +1012,16 @@ public class CryptoTokenManagementSessionBean implements CryptoTokenManagementSe
         details.put("msg", "Deleted key pair from CryptoToken " + cryptoTokenId);
         details.put("keyAlias", alias);
         try {
+
+            String lib = null;
+            String[] parts = cryptoToken.getSignProviderName().split("-");
+            if (parts.length > 1){
+                lib = parts[1];
+            }
+
+            if(cryptoToken.getPublicKey(alias).getAlgorithm() == "Ed25519" && lib != null && (lib.equals("libcs2_pkcs11.so") || lib.equals("libcs_pkcs11_R2.so"))){
+                Ed25519.removeKeyPair(alias, cryptoToken.getSignProviderName());
+            }            
             cryptoToken.deleteEntry(alias);
         } catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e) {
             throw new InvalidKeyException(e);

@@ -153,8 +153,7 @@ public class HSMKeyTool extends ClientToolBox {
                 continue;
             }
             try {
-                keyStoreContainer.generateKeyPair(keySpec, alias);
-                System.out.println("Key with specification '"+keySpec+"' generated for alias '"+alias+"'.");
+                keyStoreContainer.generateKeyPair(keySpec, alias);                
             } catch( Exception e ) {
                 final String m = "Failed to generate key for alias '"+alias+"' with key specification '"+keySpec+"'.";
                 System.err.println(m);
