@@ -2840,7 +2840,7 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
             keySpecification = "2048";
         }
         // Do the general import
-        CA ca = importCA(authenticationToken, caname, keystorepass, signatureCertChain, catoken, keyAlgorithm, keySpecification);
+        CA ca = importCA(authenticationToken, caname, keystorepass, signatureCertChain, catoken, keyAlgorithm, keySpecification, null);
         // Finally audit log
         logAuditEvent(
                 EjbcaEventTypes.CA_IMPORT, EventStatus.SUCCESS,
@@ -2976,6 +2976,24 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
         if ((catokenclasspath != null && cryptoTokenName != null) || (catokenclasspath == null && cryptoTokenName == null)) {
             throw new IllegalCryptoTokenException("One, and only one, of catokenclasspath or cryptoTokenName must be specified");
         }
+        
+        // Extract certificate profile if specified in properties
+        Integer certificateProfileId = null;
+        String certificateProfileName = caTokenProperties.getProperty("certificateProfileName");
+        if (certificateProfileName != null && !certificateProfileName.trim().isEmpty()) {
+            // Remove from properties so it doesn't interfere with crypto token configuration
+            caTokenProperties.remove("certificateProfileName");
+            
+            // Look up the certificate profile ID
+            certificateProfileId = certificateProfileSession.getCertificateProfileId(certificateProfileName.trim());
+            if (certificateProfileId == null || certificateProfileId == 0) {
+                log.warn("Certificate profile '" + certificateProfileName + "' not found. Using default profile selection.");
+                certificateProfileId = null; // Reset to null to use default logic
+            } else {
+                log.info("Using certificate profile '" + certificateProfileName + "' (ID: " + certificateProfileId + ") for imported CA");
+            }
+        }
+                
         final int cryptoTokenId;
         if (catokenclasspath != null) {
             // Create the CryptoToken
@@ -3023,7 +3041,7 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
             keySpecification = "2048";
         }
         // Do the general import
-        importCA(authenticationToken, caname, catokenpassword, signatureCertChain, catoken, keyAlgorithm, keySpecification);
+        importCA(authenticationToken, caname, catokenpassword, signatureCertChain, catoken, keyAlgorithm, keySpecification, certificateProfileId);
     }
 
     /**
@@ -3058,6 +3076,7 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
     /**
      * @param keyAlgorithm     keyalgorithm for extended CA services, OCSP, CMS. Example AlgorithmConstants.KEYALGORITHM_RSA
      * @param keySpecification keyspecification for extended CA services, OCSP, CMS. Example 2048
+     * @param certificateProfileId optional certificate profile ID to use for the imported CA. If null, defaults to ROOTCA or SUBCA based on certificate type
      * @throws AuthorizationDeniedException             if imported CA was signed by a CA user does not have authorization to.
      * @throws CAExistsException                        if the CA already exists
      * @throws CAOfflineException                       if CRLs can not be generated because imported CA did not manage to get online
@@ -3066,7 +3085,7 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
      * @throws CryptoTokenOfflineException              if crypto token is unavailable.
      */
     private CA importCA(AuthenticationToken admin, String caname, String keystorepass, Certificate[] signatureCertChain, CAToken catoken,
-                        String keyAlgorithm, String keySpecification) throws CryptoTokenAuthenticationFailedException, CryptoTokenOfflineException,
+                        String keyAlgorithm, String keySpecification, Integer certificateProfileId) throws CryptoTokenAuthenticationFailedException, CryptoTokenOfflineException,
             IllegalCryptoTokenException, AuthorizationDeniedException, CAExistsException, CAOfflineException {
         // Create a new CA
         int signedby = CAInfo.SIGNEDBYEXTERNALCA;
@@ -3075,6 +3094,7 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
         Certificate caSignatureCertificate = signatureCertChain[0];
         ArrayList<Certificate> certificatechain = new ArrayList<>();
         Collections.addAll(certificatechain, signatureCertChain);
+        // Determine if CA is self-signed and set defaults
         if (signatureCertChain.length == 1) {
             if (verifyIssuer(caSignatureCertificate, caSignatureCertificate)) {
                 signedby = CAInfo.SELFSIGNED;
@@ -3123,6 +3143,12 @@ public class CAAdminSessionBean implements CAAdminSessionLocal, CAAdminSessionRe
                     }
                 }
             }
+        }
+   
+        // Override certificate profile if specified
+        if (certificateProfileId != null && certificateProfileId > 0) {
+            certprof = certificateProfileId;
+            log.info("Using specified certificate profile ID: " + certprof + " for imported CA: " + caname);
         }
 
         CAInfo cainfo = null;

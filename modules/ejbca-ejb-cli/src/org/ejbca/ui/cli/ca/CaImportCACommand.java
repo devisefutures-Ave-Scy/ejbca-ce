@@ -69,6 +69,7 @@ public class CaImportCACommand extends BaseCaAdminCommand {
     private static final String CA_TOKEN_PROPERTIES_FILE_KEY = "--prop";
     private static final String TOKEN_NAME_KEY = "--tokenname";
     private static final String CA_CERTIFICATE_FILE_KEY = "--cert";
+    private static final String CERTIFICATE_PROFILE_KEY = "--certificateprofile";
 
     {
         registerParameter(new Parameter(HARD_SWITCH_KEY, "", MandatoryMode.OPTIONAL, StandaloneMode.FORBID, ParameterMode.FLAG,
@@ -110,6 +111,13 @@ public class CaImportCACommand extends BaseCaAdminCommand {
                 StandaloneMode.ALLOW,
                 ParameterMode.ARGUMENT,
                 "(PKCS#11) A file containing CA-certificates. One or more CA-certificates, with this CA's certificate first, and others following in certificate chain order."));
+        registerParameter(new Parameter(
+                CERTIFICATE_PROFILE_KEY,
+                "Certificate Profile Name",
+                MandatoryMode.OPTIONAL,
+                StandaloneMode.ALLOW,
+                ParameterMode.ARGUMENT,
+                "(PKCS#11) Optional certificate profile to use for the imported CA. If not specified, ROOTCA or SUBCA will be automatically selected based on the certificate chain."));
 
     }
 
@@ -228,6 +236,15 @@ public class CaImportCACommand extends BaseCaAdminCommand {
                 log.error("No such file: " + parameters.get(CA_TOKEN_PROPERTIES_FILE_KEY));
                 return CommandResult.FUNCTIONAL_FAILURE;
             }
+            
+            // Handle certificate profile parameter
+            String certificateProfile = parameters.get(CERTIFICATE_PROFILE_KEY);
+            if (certificateProfile != null && !certificateProfile.trim().isEmpty()) {
+                // Append certificate profile to properties for passing through to the import method
+                catokenproperties = catokenproperties + "\ncertificateProfileName=" + certificateProfile.trim();
+                log.info("Using certificate profile: " + certificateProfile);
+            }
+                        
             Collection<Certificate> cacerts;
             try {
                 cacerts = CertTools.getCertsFromPEM(parameters.get(CA_CERTIFICATE_FILE_KEY), Certificate.class);
@@ -277,7 +294,9 @@ public class CaImportCACommand extends BaseCaAdminCommand {
                 + " PKCS#12 keystore is the default option, while CA certificate can be chosen by specifying the flag " + HARD_SWITCH_KEY + " to import a CA certificate where the keys are on an HSM.\n"
                 + "The two usages are: \n" + "<CA name> <pkcs12 file> [" + KEYSTORE_PASSWORD_KEY
                 + " <password>] [<signature alias>] [<encryption alias>]\n" + "    or:\n" + "<CA name> " + HARD_SWITCH_KEY
-                + " <catokenclasspath> <catokenpassword> <catokenproperties> <ca-certificate-file>";
+                + " <catokenclasspath> <catokenpassword> <catokenproperties> <ca-certificate-file> [" + CERTIFICATE_PROFILE_KEY + " <certificate profile name>]"
+                + "\n\nFor PKCS#11 (HSM) imports, the optional " + CERTIFICATE_PROFILE_KEY + " parameter can be used to specify a custom certificate profile. "
+                + "If not specified, ROOTCA or SUBCA will be automatically selected based on the certificate chain.";
     }
     
     @Override
