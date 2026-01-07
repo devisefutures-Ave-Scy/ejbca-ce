@@ -34,6 +34,7 @@ import org.apache.log4j.Logger;
 import org.cesecore.config.ConfigurationHolder;
 import org.cesecore.certificates.ca.CAInfo;
 import org.cesecore.internal.UpgradeableDataHashMap;
+import org.cesecore.keys.util.Ed25519;
 
 import com.keyfactor.util.StringTools;
 import com.keyfactor.util.keys.token.CryptoToken;
@@ -143,63 +144,82 @@ public class CAToken extends UpgradeableDataHashMap {
                 // Loop that checks  if there all key aliases have keys
         		if (cryptoToken!=null) {
                     final HashMap<String, PrivateKey> aliasMap = new HashMap<>();
+                    final String providerName = cryptoToken.getSignProviderName();
+                    final boolean isUtimacoHsm = providerName != null && (providerName.contains("libcs2_pkcs11.so") || providerName.contains("libcs_pkcs11_R2.so"));
+
                     for (final String alias : aliases) {
-                        PrivateKey privateKey = aliasMap.get(alias);
-                        if (privateKey==null) {
-                            try {
-                                privateKey = cryptoToken.getPrivateKey(alias);
-                                // Cache lookup to avoid having to retrieve the same key when used for multiple purposes
-                                if (privateKey!=null) {
-                                    aliasMap.put(alias, privateKey);
-                                }
-                            } catch (CryptoTokenOfflineException e) {
-                                // Continue
+                        final boolean isEd25519 = cryptoToken.getPublicKey(alias) != null && "Ed25519".equals(cryptoToken.getPublicKey(alias).getAlgorithm());
+                        
+                        if (isEd25519 && isUtimacoHsm) {
+                            Ed25519 ed = new Ed25519();
+                            boolean status = ed.validate_alias(alias, providerName);
+
+                            if (status) {
+                                foundKeys++;
+                                log.debug("Utimaco Ed25519 Keys verified with alias: "+alias);
+                                ret = CryptoToken.STATUS_ACTIVE;
+                            } else {
+                                log.debug("Utimaco Ed25519 Keys failed verification with alias: "+alias);
                             }
                         }
-                        if (privateKey==null) {
-                            // We don't consider it critical if currently unused certificate signing keys has been deleted (as long as it isn't mapped for any other purposes)
-                            if (alias.equals(aliasCertSignKeyPrevious) && keyStrings.isAliasMappedForSinglePurpose(aliasCertSignKeyPrevious)) {
-                                foundKeys++;
-                                if (log.isDebugEnabled()) {
-                                    log.debug("Missing private key for alias: "+alias + " (Not treated as an error, since it is only mapped as the previous CA signing key.)");
+                        else{
+                            PrivateKey privateKey = aliasMap.get(alias);
+                            if (privateKey==null) {
+                                try {
+                                    privateKey = cryptoToken.getPrivateKey(alias);
+                                    // Cache lookup to avoid having to retrieve the same key when used for multiple purposes
+                                    if (privateKey!=null) {
+                                        aliasMap.put(alias, privateKey);
+                                    }
+                                } catch (CryptoTokenOfflineException e) {
+                                    // Continue
                                 }
-                            } else if (alias.equals(aliasCertSignKeyNext) && keyStrings.isAliasMappedForSinglePurpose(aliasCertSignKeyNext)) {
+                            }
+                            if (privateKey==null) {
+                                // We don't consider it critical if currently unused certificate signing keys has been deleted (as long as it isn't mapped for any other purposes)
+                                if (alias.equals(aliasCertSignKeyPrevious) && keyStrings.isAliasMappedForSinglePurpose(aliasCertSignKeyPrevious)) {
                                     foundKeys++;
                                     if (log.isDebugEnabled()) {
-                                        log.debug("Missing private key for alias: "+alias + " (Not treated as an error, since it is only mapped as the next CA signing key.)");
+                                        log.debug("Missing private key for alias: "+alias + " (Not treated as an error, since it is only mapped as the previous CA signing key.)");
                                     }
-                            } else {
-                                if (log.isDebugEnabled()) {
-                                    log.debug("Missing private key for alias: "+alias);
-                                }
-                            }
-                        } else {
-                            foundKeys++;
-                        }
-                        if (alias.equals(aliasTestKey)) {
-                            PublicKey publicKey;
-                            try {
-                                publicKey = cryptoToken.getPublicKey(aliasTestKey);
-                            } catch (CryptoTokenOfflineException e) {
-                                publicKey = null;
-                            }
-                            if (publicKey == null) {
-                                if (log.isDebugEnabled()) {
-                                    log.debug("Missing public key for alias: "+alias);
-                                }
-                            }
-                            // Check that that the testkey is usable by doing a test signature.
-                            try {
-                                if (caTokenSignTest) {
+                                } else if (alias.equals(aliasCertSignKeyNext) && keyStrings.isAliasMappedForSinglePurpose(aliasCertSignKeyNext)) {
+                                        foundKeys++;
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("Missing private key for alias: "+alias + " (Not treated as an error, since it is only mapped as the next CA signing key.)");
+                                        }
+                                } else {
                                     if (log.isDebugEnabled()) {
-                                        log.debug("Testing key '" + alias + "' residing in crypto token '" + cryptoToken.getTokenName() + "'.");
+                                        log.debug("Missing private key for alias: "+alias);
                                     }
-                                    cryptoToken.testKeyPair(alias, publicKey, privateKey);
                                 }
-                                // If we can test the testkey, we are finally active!
-                                ret = CryptoToken.STATUS_ACTIVE;
-                            } catch (Throwable th) { // NOPMD: we need to catch _everything_ when dealing with HSMs
-                                log.error("Error testing activation for Crypto Token with ID " + cryptoToken.getId() + ".", th);
+                            } else {
+                                foundKeys++;
+                            }
+                            if (alias.equals(aliasTestKey)) {
+                                PublicKey publicKey;
+                                try {
+                                    publicKey = cryptoToken.getPublicKey(aliasTestKey);
+                                } catch (CryptoTokenOfflineException e) {
+                                    publicKey = null;
+                                }
+                                if (publicKey == null) {
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Missing public key for alias: "+alias);
+                                    }
+                                }
+                                // Check that that the testkey is usable by doing a test signature.
+                                try {
+                                    if (caTokenSignTest) {
+                                        if (log.isDebugEnabled()) {
+                                            log.debug("Testing key '" + alias + "' residing in crypto token '" + cryptoToken.getTokenName() + "'.");
+                                        }
+                                        cryptoToken.testKeyPair(alias, publicKey, privateKey);
+                                    }
+                                    // If we can test the testkey, we are finally active!
+                                    ret = CryptoToken.STATUS_ACTIVE;
+                                } catch (Throwable th) { // NOPMD: we need to catch _everything_ when dealing with HSMs
+                                    log.error("Error testing activation for Crypto Token with ID " + cryptoToken.getId() + ".", th);
+                                }
                             }
                         }
                     }
