@@ -276,6 +276,16 @@ public class Ed25519 {
         HsmInformation hsmInfo = null;
         try {
             hsmInfo = hsmInfoCache.get(providerName);
+
+            // Defensive null check - this method only works with HSM providers
+            if (hsmInfo == null) {
+                throw new IllegalStateException(
+                    "HSM provider not initialized. The sign() method only works with HSM providers (e.g., Utimaco). " +
+                    "Provider '" + providerName + "' is not an HSM provider or has not been initialized via updateHsmInfoCache(). " +
+                    "Please ensure the HSM is properly configured and initialized before calling this method."
+                );
+            }
+
             sessionRef = hsmInfo.getSession();
             
             if(!hsmInfo.KeyPairCache.containsKey(alias)){

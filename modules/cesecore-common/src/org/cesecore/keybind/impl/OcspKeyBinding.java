@@ -52,6 +52,7 @@ import com.keyfactor.util.CryptoProviderTools;
 import java.io.IOException;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateParsingException;
@@ -396,13 +397,97 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
     @Override
     public byte[] generateCsrForNextKeyPairEd25519(final String providerName, final PublicKey publicKey, final String signatureAlgorithm,
             final X500Name subjectDn, String alias) throws IOException, NoSuchAlgorithmException, OperatorCreationException {
-                System.out.println("Reached OcspKeyBinding generateCsrForNextKeyPair");
+                log.debug("Generating Ed25519 CSR for OCSP key binding with provider: " + providerName);
 
         final KeyPurposeId[] ocspKeyPurposeId = new KeyPurposeId[] { KeyPurposeId.id_kp_OCSPSigning };
         final SubjectKeyIdentifier subjectKeyIdentifier = new JcaX509ExtensionUtils()
                 .createSubjectKeyIdentifier(publicKey);
 
-        
+        // Build OCSP-specific extensions
+        KeyUsage keyUsage = new KeyUsage(KeyUsage.digitalSignature);
+        boolean isCritical = true;
+
+        ASN1OctetString keyUsageOctetString = new DEROctetString(keyUsage.getEncoded(ASN1Encoding.DER));
+        Extension keyUsageExtension = new Extension(Extension.keyUsage, isCritical, keyUsageOctetString);
+
+        Extension subjectKeyIdentifierExtension = new Extension(
+            Extension.subjectKeyIdentifier,
+            false, // Non-critical
+            new DEROctetString(subjectKeyIdentifier.getKeyIdentifier())
+        );
+
+        ExtendedKeyUsage extendedKeyUsage = new ExtendedKeyUsage(ocspKeyPurposeId);
+        Extension extendedKeyUsageExtension = new Extension(
+            Extension.extendedKeyUsage,
+            false, // Non-critical
+            new DEROctetString(extendedKeyUsage.getEncoded(ASN1Encoding.DER))
+        );
+
+        ASN1ObjectIdentifier ocspNoCheckOid = OCSPObjectIdentifiers.id_pkix_ocsp_nocheck;
+        DERNull ocspNoCheckValue = DERNull.INSTANCE;
+        Extension ocspNocheckExtension = new Extension(
+            ocspNoCheckOid,
+            false, // Non-critical
+            new DEROctetString(ocspNoCheckValue.getEncoded(ASN1Encoding.DER))
+        );
+
+        Extensions extensions = new Extensions(new Extension[]{
+            keyUsageExtension,
+            subjectKeyIdentifierExtension,
+            extendedKeyUsageExtension,
+            ocspNocheckExtension
+        });
+
+        Attribute extensionAttribute = new Attribute(
+            PKCSObjectIdentifiers.pkcs_9_at_extensionRequest,
+            new DERSet(extensions)
+        );
+        ASN1Set attributesSet = new DERSet(extensionAttribute);
+
+        // Detect provider type to determine signing approach
+        final boolean isUtimacoHsm = providerName != null &&
+            (providerName.contains("libcs2_pkcs11.so") || providerName.contains("libcs_pkcs11_R2.so"));
+
+        if (isUtimacoHsm) {
+            // For Utimaco HSM: Use the custom Ed25519.sign() method via CertTools
+            log.debug("Using Utimaco HSM Ed25519 signing path");
+            return CertTools
+                    .genPKCS10CertificationRequest(signatureAlgorithm, subjectDn, publicKey, attributesSet, alias, providerName)
+                    .getEncoded();
+        } else {
+            // For soft tokens (BouncyCastle): This path requires private key which we don't have
+            // This is a limitation of the current method signature - the private key needs to be passed
+            log.error("Soft token Ed25519 CSR generation requires private key, but current method signature does not support it.");
+            throw new OperatorCreationException("Ed25519 CSR generation for soft tokens requires private key access. " +
+                    "Please use the overloaded method that accepts a PrivateKey parameter.");
+        }
+    }
+
+    /**
+     * Generate CSR for Ed25519 key pair with explicit private key support for soft tokens.
+     * This method supports both HSM (Utimaco) and soft token (BouncyCastle) providers.
+     *
+     * @param providerName the crypto provider name
+     * @param publicKey the public key
+     * @param privateKey the private key (can be null for HSM)
+     * @param signatureAlgorithm the signature algorithm
+     * @param subjectDn the subject DN
+     * @param alias the key alias (used for HSM signing)
+     * @return the encoded CSR bytes
+     * @throws IOException if encoding fails
+     * @throws NoSuchAlgorithmException if algorithm is not supported
+     * @throws OperatorCreationException if content signer creation fails
+     */
+    public byte[] generateCsrForNextKeyPairEd25519(final String providerName, final PublicKey publicKey, final PrivateKey privateKey,
+            final String signatureAlgorithm, final X500Name subjectDn, String alias)
+            throws IOException, NoSuchAlgorithmException, OperatorCreationException {
+        log.debug("Generating Ed25519 CSR for OCSP key binding with provider: " + providerName);
+
+        final KeyPurposeId[] ocspKeyPurposeId = new KeyPurposeId[] { KeyPurposeId.id_kp_OCSPSigning };
+        final SubjectKeyIdentifier subjectKeyIdentifier = new JcaX509ExtensionUtils()
+                .createSubjectKeyIdentifier(publicKey);
+
+        // Build OCSP-specific extensions        
         KeyUsage keyUsage = new KeyUsage(KeyUsage.digitalSignature);
         boolean isCritical = true;
 
@@ -410,13 +495,9 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
 
         Extension keyUsageExtension = new Extension(Extension.keyUsage, isCritical, keyUsageOctetString);
 
-        //Extensions extensions = new Extensions(new Extension[]{keyUsageExtension});
-
-
         Extension subjectKeyIdentifierExtension = new Extension(
             Extension.subjectKeyIdentifier,
             false, // Non-critical
-            // Use the provided object's key identifier bytes
             new DEROctetString(subjectKeyIdentifier.getKeyIdentifier())
         );
 
@@ -449,11 +530,37 @@ public class OcspKeyBinding extends InternalKeyBindingBase {
         );
         ASN1Set attributesSet = new DERSet(extensionAttribute);
 
+        // Detect provider type to determine signing approach
+        final boolean isUtimacoHsm = providerName != null &&
+            (providerName.contains("libcs2_pkcs11.so") || providerName.contains("libcs_pkcs11_R2.so"));
 
-        return CertTools
-                .genPKCS10CertificationRequest(signatureAlgorithm, subjectDn, publicKey, attributesSet, alias, providerName)
-                .getEncoded();
+        if (isUtimacoHsm) {
+            // For Utimaco HSM: Use the custom Ed25519.sign() method via CertTools
+            log.debug("Using Utimaco HSM Ed25519 signing path");
 
-        
+            return CertTools
+                    .genPKCS10CertificationRequest(signatureAlgorithm, subjectDn, publicKey, attributesSet, alias, providerName)
+                    .getEncoded();
+        } else {
+            // For soft tokens (BouncyCastle): Use standard BouncyCastle ContentSigner
+            log.debug("Using BouncyCastle soft token Ed25519 signing path");
+
+            if (privateKey == null) {
+                throw new OperatorCreationException("Private key is required for soft token Ed25519 CSR generation");
+            }
+
+            // Use standard BouncyCastle PKCS10 builder with BouncyCastle provider
+            final String bcProvider = "BC"; // BouncyCastle provider
+            final PKCS10CertificationRequestBuilder csrBuilder = new JcaPKCS10CertificationRequestBuilder(subjectDn, publicKey)
+                    .addAttribute(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest, extensions);
+
+            // Create content signer with BouncyCastle provider
+            final ContentSigner contentSigner = new JcaContentSignerBuilder(signatureAlgorithm)
+                    .setProvider(bcProvider)
+                    .build(privateKey);
+
+            final PKCS10CertificationRequest csr = csrBuilder.build(contentSigner);
+            return csr.getEncoded();
+        }        
     }    
 }
