@@ -1,0 +1,51 @@
+<project name="x509-common-util" basedir=".." default="jar">
+
+  <!-- Import shared properties and helpers -->
+  <import file="../build-properties.xml"/>
+  <import file="../build-helpers.xml"/>
+
+  <!-- Define this module’s own dir and output -->
+  <property name="x509-common-util.dir" location="${basedir}/x509-common-util"/>
+  <property name="x509-common-util.src.dir" value="${x509-common-util.dir}/src/main/java"/>
+  <property name="x509-common-util.build.dir" value="${x509-common-util.dir}/build/classes"/>
+  <!-- lib destination (same pattern the other modules use) -->
+  <property name="mod.x509-common-util.lib"
+            value="${ejbca.home}/lib/x509-common-util-modified.jar"/>
+
+  <path id="project.class.path">
+      <fileset dir="${ejbca.home}/lib" includes="*.jar"/>
+
+    <!-- Jakarta EE dependencies -->
+    <path refid="lib.jee.classpath"/>
+    <path refid="lib.jakarta.xml.ws-api.classpath"/>
+    <path refid="lib.jaxws-rs.classpath"/>
+    <path refid="lib.jakarta.jws-api.classpath"/>
+    <path refid="lib.jakarta.xml.soap-api.classpath"/>
+    <path refid="lib.jakarta.mail.classpath"/>      
+
+</path>
+
+  <target name="clean">
+    <delete dir="${x509-common-util.build.dir}"/>
+    <delete file="${mod.x509-common-util.lib}"/>
+  </target>
+
+  <target name="compile">
+    <mkdir dir="${x509-common-util.build.dir}"/>
+    <javac srcdir="${x509-common-util.src.dir}"
+           destdir="${x509-common-util.build.dir}"
+           includeantruntime="false">
+      <!-- Use project classpath if needed -->
+      <classpath refid="project.class.path"/>
+    </javac>
+  </target>
+
+  <target name="jar" depends="compile">
+    <mkdir dir="${ejbca.home}/lib"/>
+    <jar destfile="${mod.x509-common-util.lib}">
+      <fileset dir="${x509-common-util.build.dir}"/>
+    </jar>
+  </target>
+
+</project>
+

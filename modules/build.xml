@@ -296,14 +296,23 @@
 	<target name="cesecore-cvcca" depends="cesecore-common, -build-cesecore-cvcca, -copy-cesecore-cvcca"/>
 	
 	<target name="cesecore-x509ca" depends="cesecore-common, -build-cesecore-x509ca, -copy-cesecore-x509ca"/>
-	
+
+
+	<target name="x509-common-util" depends="-build-x509-common-util"/>
+
     <target name="-build-cesecore-cvcca" if="${mod.cesecore-cvcca.exists}">
         <ant antfile="${mod.cesecore-cvcca.path}/build.xml" target="jar" inheritall="true" inheritrefs="true"/>
     </target>    
 	
 	<target name="-build-cesecore-x509ca" if="${mod.cesecore-x509ca.exists}">
-        <ant antfile="${mod.cesecore-x509ca.path}/build.xml" target="jar" inheritall="true" inheritrefs="true"/>
-    </target>
+         <ant antfile="${mod.cesecore-x509ca.path}/build.xml" target="jar" inheritall="true" inheritrefs="true"/>
+        </target>
+
+        <target name="-build-x509-common-util" if="${mod.x509-common-util.exists}">
+            <ant antfile="${mod.x509-common-util.path}/build.xml" target="jar" inheritall="true" inheritrefs="true"/>
+        </target>
+
+
 
 	<target name="ejbca-common" description="Build EJBCA Common library" depends="cesecore-common, cesecore-entity, cesecore-ejb-interface">
 		<ant antfile="${mod.ejbca-common.path}/build.xml" target="build-common" inheritall="true" inheritrefs="true"/>

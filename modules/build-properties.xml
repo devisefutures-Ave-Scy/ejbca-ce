@@ -40,6 +40,9 @@
     <property name="mod.cesecore-other-ejb-interface.lib" location="${mod.dist.path}/cesecore-other-ejb-interface.jar" />
     <property name="mod.cesecore-x509ca.path" location="${mod.path}/cesecore-x509ca" />
     <property name="mod.cesecore-x509ca.lib" location="${mod.dist.path}/cesecore-x509ca.jar" />
+    
+    <property name="mod.x509-common-util.path" location="${mod.path}/x509-common-util"/>
+
     <property name="mod.ejbca-ejb.lib" location="${mod.dist.path}/ejbca-ejb.jar" />
     <property name="mod.ejbca-ejb.path" location="${mod.path}/ejbca-ejb" />
     <property name="mod.ejbca-ejb-cli.dist" location="${ejbca.dist.path}/ejbca-ejb-cli" />
@@ -329,7 +332,7 @@
 	<path id="lib.primefaces.classpath"><fileset dir="${ejbca.home}/lib/primefaces" includes="primefaces-*.jar"/></path>
 
 
-	<path id="lib.x509-common-util.classpath"><fileset dir="${ejbca.home}/lib" includes="x509-common-util*.jar"/></path> 
+	<path id="lib.x509-common-util.classpath"><fileset dir="${ejbca.home}/lib" includes="x509-common-util-modified*.jar"/></path> 
 	<path id="lib.cryptotokens.classpath"><fileset dir="${ejbca.home}/lib" includes="cryptotokens-*.jar"/></path>
 	<path id="lib.p11ng.classpath"><fileset dir="${ejbca.home}/lib" includes="p11ng-*.jar"/></path> 
 	
@@ -542,7 +545,15 @@
     <condition property="mod.cesecore-x509ca.exists">
         <available file="${mod.cesecore-x509ca.path}/build.xml" />
     </condition>
-	
+
+    <condition property="mod.x509-common-util.exists">
+        <and>
+            <isset property="mod.x509-common-util.path"/>
+            <available file="${mod.x509-common-util.path}/build.xml"/>
+        </and>
+    </condition>
+
+
     <condition property="mod.cesecore-cvcca.exists">
         <available file="${mod.cesecore-cvcca.path}/build.xml" />
     </condition>
