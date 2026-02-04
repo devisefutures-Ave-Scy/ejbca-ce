@@ -605,26 +605,26 @@ public final class StringTools {
         if (log.isTraceEnabled()) {
             log.trace((Object)(">incrementKeySequence: " + keySequenceFormat + ", " + oldSequence));
         }
-        Object ret = null;
+        String ret = null;
         if (keySequenceFormat == 1) {
             ret = StringTools.incrementNumeric(oldSequence);
         } else if (keySequenceFormat == 2) {
             ret = StringTools.incrementAlphaNumeric(oldSequence);
         } else if (keySequenceFormat == 4) {
-            countryCode = oldSequence.substring(0, Math.min(2, oldSequence.length()));
+            final String countryCode = oldSequence.substring(0, Math.min(2, oldSequence.length()));
             if (log.isDebugEnabled()) {
                 log.debug((Object)("countryCode: " + countryCode));
             }
-            inc = StringTools.incrementNumeric(oldSequence.substring(2));
+            final String inc = StringTools.incrementNumeric(oldSequence.substring(2));
             if (oldSequence.length() > 2 && inc != null) {
                 ret = countryCode + inc;
             }
         } else if (keySequenceFormat == 8) {
-            countryCode = oldSequence.substring(0, Math.min(2, oldSequence.length()));
+            final String countryCode = oldSequence.substring(0, Math.min(2, oldSequence.length()));
             if (log.isDebugEnabled()) {
                 log.debug((Object)("countryCode: " + countryCode));
             }
-            inc = StringTools.incrementAlphaNumeric(oldSequence.substring(2));
+            final String inc = StringTools.incrementAlphaNumeric(oldSequence.substring(2));
             if (oldSequence.length() > 2 && inc != null) {
                 ret = countryCode + inc;
             }

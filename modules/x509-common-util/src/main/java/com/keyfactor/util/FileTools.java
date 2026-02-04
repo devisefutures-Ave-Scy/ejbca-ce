@@ -75,34 +75,24 @@ public abstract class FileTools {
         return FileTools.readInputStreamtoBuffer(in);
     }
 
-    public static byte[] readInputStreamtoBuffer(InputStream in) {
-        byte[] byArray;
-        ByteArrayOutputStream os = new ByteArrayOutputStream();
-        try {
+    /**
+     * Help function to read an InputStream to a byte array.
+     *
+     * @return byte[] containing the contents of the file.
+     *
+     */
+    public static byte[] readInputStreamtoBuffer(final InputStream in)  {
+        try (final ByteArrayOutputStream os = new ByteArrayOutputStream()) {
             int len = 0;
-            byte[] buf = new byte[1024];
+            final byte[] buf = new byte[1024];
             while ((len = in.read(buf)) > 0) {
                 os.write(buf, 0, len);
             }
             in.close();
-            byArray = os.toByteArray();
+            return os.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException("Caught IOException for unknown reason", e);
         }
-        catch (Throwable throwable) {
-            try {
-                try {
-                    os.close();
-                }
-                catch (Throwable throwable2) {
-                    throwable.addSuppressed(throwable2);
-                }
-                throw throwable;
-            }
-            catch (IOException e) {
-                throw new RuntimeException("Caught IOException for unknown reason", e);
-            }
-        }
-        os.close();
-        return byArray;
     }
 
     public static void sortByName(File[] files) {

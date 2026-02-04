@@ -157,6 +157,7 @@ import org.bouncycastle.asn1.x509.SubjectKeyIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.cert.X509CRLHolder;
+import org.bouncycastle.cert.X509ExtensionUtils;
 import org.bouncycastle.cert.bc.BcX509ExtensionUtils;
 import org.bouncycastle.cms.CMSEnvelopedData;
 import org.bouncycastle.cms.CMSEnvelopedDataGenerator;
@@ -188,6 +189,7 @@ import org.bouncycastle.jcajce.spec.MLDSAParameterSpec;
 import org.bouncycastle.jcajce.spec.MLKEMParameterSpec;
 import org.bouncycastle.jcajce.spec.SLHDSAParameterSpec;
 import org.bouncycastle.jce.interfaces.PKCS12BagAttributeCarrier;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.jce.provider.JCEECPublicKey;
 import org.bouncycastle.jce.spec.ECNamedCurveSpec;
 import org.bouncycastle.math.ec.ECCurve;
@@ -378,29 +380,28 @@ public final class KeyTools {
         return new ECPoint(new BigInteger(1, x), new BigInteger(1, y));
     }
 
-    /*
-     * WARNING - Removed try catching itself - possible behaviour change.
+
+    /**
+     * Takes a Ed25519 public key and encodes it
+     *
+     * @param edPublicKey a Ed25519 public key
+     * @return the resulting byte array
      */
-    public static byte[] encodeEd25519PublicKey(PublicKey edPublicKey) {
-        byte[] byArray;
-        ASN1InputStream asn1InputStream = new ASN1InputStream(edPublicKey.getEncoded());
+    public static byte[] encodeEd25519PublicKey(final PublicKey edPublicKey) {
         try {
-            DLSequence id = (DLSequence)asn1InputStream.readObject();
-            DERBitString raw = (DERBitString)id.getObjectAt(1).toASN1Primitive();
-            byArray = raw.getBytes();
-        }
-        catch (Throwable throwable) {
+            ASN1InputStream asn1InputStream = new ASN1InputStream(edPublicKey.getEncoded());
             try {
+                DLSequence id = (DLSequence) asn1InputStream.readObject();
+                DERBitString raw = (DERBitString) id.getObjectAt(1).toASN1Primitive();
+                return raw.getBytes();
+            } finally {
                 asn1InputStream.close();
-                throw throwable;
             }
-            catch (IOException e) {
-                throw new IllegalStateException("IOException encountered when encoding Ed25519 key.");
-            }
+        } catch (IOException e) {
+            throw new IllegalStateException("IOException encountered when encoding Ed25519 key.");
         }
-        asn1InputStream.close();
-        return byArray;
     }
+    
 
     public static PublicKey decodeEd25519PublicKey(byte[] keyBody) {
         KeyFactory keyFactory;
@@ -936,42 +937,39 @@ public final class KeyTools {
         return ret;
     }
 
-    public static SubjectKeyIdentifier createSubjectKeyId(PublicKey pubKey) {
-        SubjectKeyIdentifier subjectKeyIdentifier;
-        ASN1InputStream pubKeyAsn1InputStream = new ASN1InputStream((InputStream)new ByteArrayInputStream(pubKey.getEncoded()));
+
+    /**
+     * create the subject key identifier.
+     *
+     * @param pubKey
+     *            the public key
+     *
+     * @return SubjectKeyIdentifer asn.1 structure
+     */
+    public static SubjectKeyIdentifier createSubjectKeyId(final PublicKey pubKey) {
         try {
-            ASN1Sequence keyASN1Sequence;
-            ASN1Primitive keyObject = pubKeyAsn1InputStream.readObject();
-            if (keyObject instanceof ASN1Sequence) {
-                keyASN1Sequence = (ASN1Sequence)keyObject;
-            } else {
-                PublicKey altKey = (PublicKey)KeyFactory.getInstance(pubKey.getAlgorithm(), CryptoProviderTools.getProviderNameFromAlg(pubKey.getAlgorithm())).translateKey(pubKey);
-                try (ASN1InputStream altKeyAsn1InputStream = new ASN1InputStream((InputStream)new ByteArrayInputStream(altKey.getEncoded()));){
-                    keyASN1Sequence = (ASN1Sequence)altKeyAsn1InputStream.readObject();
+            final ASN1Sequence keyASN1Sequence;
+            try( final ASN1InputStream pubKeyAsn1InputStream = new ASN1InputStream(new ByteArrayInputStream(pubKey.getEncoded())); ) {
+                final Object keyObject = pubKeyAsn1InputStream.readObject();
+                if (keyObject instanceof ASN1Sequence) {
+                    keyASN1Sequence = (ASN1Sequence) keyObject;
+                } else {
+                    // PublicKey key that doesn't encode to a ASN1Sequence. Fix this by creating a BC object instead.
+                    final PublicKey altKey = (PublicKey) KeyFactory.getInstance(pubKey.getAlgorithm(), BouncyCastleProvider.PROVIDER_NAME).translateKey(pubKey);
+                    try ( final ASN1InputStream altKeyAsn1InputStream = new ASN1InputStream(new ByteArrayInputStream(altKey.getEncoded())) ) {
+                        keyASN1Sequence = (ASN1Sequence) altKeyAsn1InputStream.readObject();
+                    }
                 }
+                X509ExtensionUtils x509ExtensionUtils = new BcX509ExtensionUtils();
+                return x509ExtensionUtils.createSubjectKeyIdentifier(SubjectPublicKeyInfo.getInstance(keyASN1Sequence));
             }
-            BcX509ExtensionUtils x509ExtensionUtils = new BcX509ExtensionUtils();
-            subjectKeyIdentifier = x509ExtensionUtils.createSubjectKeyIdentifier(SubjectPublicKeyInfo.getInstance((Object)keyASN1Sequence));
+        } catch (Exception e) {
+            final RuntimeException e2 = new RuntimeException("error creating key"); // NOPMD
+            e2.initCause(e);
+            throw e2;
         }
-        catch (Throwable throwable) {
-            try {
-                try {
-                    pubKeyAsn1InputStream.close();
-                }
-                catch (Throwable throwable2) {
-                    throwable.addSuppressed(throwable2);
-                }
-                throw throwable;
-            }
-            catch (Exception e) {
-                RuntimeException e2 = new RuntimeException("error creating key");
-                e2.initCause(e);
-                throw e2;
-            }
-        }
-        pubKeyAsn1InputStream.close();
-        return subjectKeyIdentifier;
     }
+         
 
     public static byte[] signData(PrivateKey privateKey, String signatureAlgorithm, byte[] data) throws SignatureException, NoSuchAlgorithmException, InvalidKeyException, NoSuchProviderException {
         Signature signer = Signature.getInstance(signatureAlgorithm, CryptoProviderTools.getProviderNameFromAlg(privateKey.getAlgorithm()));

@@ -699,7 +699,7 @@ public class DnComponents {
         if (log.isTraceEnabled()) {
             log.trace((Object)">getSubjectAlternativeName");
         }
-        Object result = "";
+        String result = "";
         if (certificate instanceof X509Certificate) {
             X509Certificate x509cert = (X509Certificate)certificate;
             Collection<List<?>> altNames = null;
@@ -842,7 +842,7 @@ public class DnComponents {
     }
 
     public static String getAltNameStringFromExtension(Extension ext) {
-        Object altName = null;
+        String altName = null;
         GeneralNames names = DnComponents.getGeneralNamesFromExtension(ext);
         if (names != null) {
             try {
@@ -1028,7 +1028,7 @@ public class DnComponents {
 
     private static String getKrb5PrincipalNameFromSequence(ASN1Sequence seq) {
         ASN1ObjectIdentifier id;
-        Object ret = null;
+        String ret = null;
         if (seq != null && (id = ASN1ObjectIdentifier.getInstance((Object)seq.getObjectAt(0))).getId().equals(KRB5PRINCIPAL_OBJECTID)) {
             ASN1TaggedObject oobj = ASN1TaggedObject.getInstance((Object)seq.getObjectAt(1));
             ASN1Primitive obj = oobj.getBaseObject().toASN1Primitive();
@@ -1721,7 +1721,7 @@ public class DnComponents {
                 log.info((Object)"Using DN components from properties file");
                 oids.clear();
                 oids.putAll(map);
-                Set keys = map.keySet();
+                Set<String> keys = map.keySet();
                 dNObjectsForward = keys.toArray(new String[keys.size()]);
             } else {
                 log.debug((Object)"Using default values for DN components");

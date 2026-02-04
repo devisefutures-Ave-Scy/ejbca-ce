@@ -185,7 +185,7 @@ public class KeyStoreTools {
     }
 
     private void generateEC(String ecNamedCurveBc, String keyAlias) throws InvalidAlgorithmParameterException {
-        ECGenParameterSpec keyParams;
+        final AlgorithmParameterSpec keyParams;
         if (log.isTraceEnabled()) {
             log.trace((Object)(">generate EC: curve name " + ecNamedCurveBc + ", keyEntryName " + keyAlias));
         }
@@ -575,32 +575,22 @@ public class KeyStoreTools {
         return cert;
     }
 
-    public static byte[] getAsByteArray(KeyStore keyStore, String password) {
-        byte[] byArray;
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        try {
+    /**
+     * Encodes a Keystore to a byte array.
+     * @param keyStore the keystore.
+     * @param password the password.
+     * @return the keystore encoded as byte array.
+     */
+    public static byte[] getAsByteArray(final KeyStore keyStore, final String password) {
+        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
             keyStore.store(outputStream, password.toCharArray());
-            byArray = outputStream.toByteArray();
+            return outputStream.toByteArray();
+        } catch (IOException | KeyStoreException | NoSuchAlgorithmException | CertificateException e) {
+            log.error(e); //should never happen if keyStore is valid object
         }
-        catch (Throwable throwable) {
-            try {
-                try {
-                    outputStream.close();
-                }
-                catch (Throwable throwable2) {
-                    throwable.addSuppressed(throwable2);
-                }
-                throw throwable;
-            }
-            catch (IOException | KeyStoreException | NoSuchAlgorithmException | CertificateException e) {
-                log.error((Object)e);
-                return null;
-            }
-        }
-        outputStream.close();
-        return byArray;
+        return null;
     }
-
+    
     private static class CertificateSignOperation
     implements ISignOperation {
         private final PrivateKey privateKey;

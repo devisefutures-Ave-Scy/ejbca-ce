@@ -72,6 +72,7 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -321,7 +322,6 @@ public abstract class AlgorithmTools {
     }
 
     public static List<String> getSignatureAlgorithms(PublicKey publickey) {
-        FalconParameterSpec spec;
         if (publickey instanceof RSAPublicKey) {
             return SIG_ALGS_RSA;
         }
@@ -361,35 +361,32 @@ public abstract class AlgorithmTools {
             }
         }
         if (publickey instanceof FalconKey) {
-            spec = ((FalconKey)publickey).getParameterSpec();
-            if (FalconParameterSpec.falcon_512.equals(spec)) {
+            if (FalconParameterSpec.falcon_512.equals( ((FalconKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_FALCON512;
             }
-            if (FalconParameterSpec.falcon_1024.equals(spec)) {
+            if (FalconParameterSpec.falcon_1024.equals( ((FalconKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_FALCON1024;
             }
         }
         if (publickey instanceof MLKEMKey) {
-            spec = ((MLKEMKey)publickey).getParameterSpec();
-            if (MLKEMParameterSpec.ml_kem_512.equals(spec)) {
+            if (MLKEMParameterSpec.ml_kem_512.equals( ((MLKEMKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_MLKEM512;
             }
-            if (MLKEMParameterSpec.ml_kem_768.equals(spec)) {
+            if (MLKEMParameterSpec.ml_kem_768.equals( ((MLKEMKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_MLKEM768;
             }
-            if (MLKEMParameterSpec.ml_kem_1024.equals(spec)) {
+            if (MLKEMParameterSpec.ml_kem_1024.equals( ((MLKEMKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_MLKEM1024;
             }
         }
         if (publickey instanceof MLDSAKey) {
-            spec = ((MLDSAKey)publickey).getParameterSpec();
-            if (MLDSAParameterSpec.ml_dsa_44.equals(spec)) {
+            if (MLDSAParameterSpec.ml_dsa_44.equals( ((MLDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_MLDSA44;
             }
-            if (MLDSAParameterSpec.ml_dsa_65.equals(spec)) {
+            if (MLDSAParameterSpec.ml_dsa_65.equals( ((MLDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_MLDSA65;
             }
-            if (MLDSAParameterSpec.ml_dsa_87.equals(spec)) {
+            if (MLDSAParameterSpec.ml_dsa_87.equals( ((MLDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_MLDSA87;
             }
         }
@@ -397,41 +394,40 @@ public abstract class AlgorithmTools {
             return SIG_ALGS_LMS;
         }
         if (publickey instanceof SLHDSAKey) {
-            spec = ((SLHDSAKey)publickey).getParameterSpec();
-            if (SLHDSAParameterSpec.slh_dsa_sha2_128s.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_sha2_128s.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHA2_128S;
             }
-            if (SLHDSAParameterSpec.slh_dsa_shake_128s.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_shake_128s.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHAKE_128S;
             }
-            if (SLHDSAParameterSpec.slh_dsa_sha2_128f.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_sha2_128f.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHA2_128F;
             }
-            if (SLHDSAParameterSpec.slh_dsa_shake_128f.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_shake_128f.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHAKE_128F;
             }
-            if (SLHDSAParameterSpec.slh_dsa_sha2_192s.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_sha2_192s.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHA2_192S;
             }
-            if (SLHDSAParameterSpec.slh_dsa_shake_192s.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_shake_192s.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHAKE_192S;
             }
-            if (SLHDSAParameterSpec.slh_dsa_sha2_192f.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_sha2_192f.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHA2_192F;
             }
-            if (SLHDSAParameterSpec.slh_dsa_shake_192f.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_shake_192f.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHAKE_192F;
             }
-            if (SLHDSAParameterSpec.slh_dsa_sha2_256s.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_sha2_256s.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHA2_256S;
             }
-            if (SLHDSAParameterSpec.slh_dsa_shake_256s.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_shake_256s.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHAKE_256S;
             }
-            if (SLHDSAParameterSpec.slh_dsa_sha2_256f.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_sha2_256f.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHA2_256F;
             }
-            if (SLHDSAParameterSpec.slh_dsa_shake_256f.equals(spec)) {
+            if (SLHDSAParameterSpec.slh_dsa_shake_256f.equals( ((SLHDSAKey)publickey).getParameterSpec() )) {
                 return SIG_ALGS_SLHDSA_SHAKE_256F;
             }
         }
@@ -447,13 +443,13 @@ public abstract class AlgorithmTools {
         if (log.isTraceEnabled()) {
             log.trace((Object)">getKeySpecification");
         }
-        Object keyspec = null;
+        String keyspec = null;
         if (publicKey instanceof RSAPublicKey) {
             keyspec = Integer.toString(((RSAPublicKey)publicKey).getModulus().bitLength());
         } else if (publicKey instanceof ECPublicKey) {
             ECPublicKey ecPublicKey = (ECPublicKey)publicKey;
             if (ecPublicKey.getParams() instanceof ECNamedCurveSpec) {
-                Object curveName;
+                String curveName;
                 keyspec = ((ECNamedCurveSpec)ecPublicKey.getParams()).getName();
                 if (Character.isDigit(((String)keyspec).charAt(0))) {
                     curveName = ECNamedCurveTable.getName((ASN1ObjectIdentifier)new ASN1ObjectIdentifier((String)keyspec));
@@ -463,8 +459,9 @@ public abstract class AlgorithmTools {
                         keyspec = curveName;
                     }
                 }
-                if ((curveName = AlgorithmTools.getEcKeySpecAliases((String)keyspec).iterator()).hasNext()) {
-                    String keySpecAlias = (String)curveName.next();
+		Iterator<String> curveNameIterator = AlgorithmTools.getEcKeySpecAliases((String) keyspec).iterator();
+                if (curveNameIterator.hasNext()) {
+                    String keySpecAlias = curveNameIterator.next();
                     keyspec = keySpecAlias;
                 }
             } else {

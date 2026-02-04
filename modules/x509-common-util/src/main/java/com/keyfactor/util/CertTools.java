@@ -569,8 +569,8 @@ public abstract class CertTools {
             for (byte[] bytes : cachain) {
                 bos.write(bytes);
             }
-            Object object = bos.toByteArray();
-            return object;
+            byte[] result = bos.toByteArray();
+            return result;
         }
     }
 
@@ -675,7 +675,7 @@ public abstract class CertTools {
     public static String getPemFromCertificate(Certificate certificate) throws CertificateEncodingException {
         byte[] enccert = certificate.getEncoded();
         byte[] b64cert = Base64.encode(enccert);
-        Object out = BEGIN_CERTIFICATE_WITH_NL;
+        String out = BEGIN_CERTIFICATE_WITH_NL;
         out = (String)out + new String(b64cert);
         out = (String)out + END_CERTIFICATE_WITH_NL;
         return out;

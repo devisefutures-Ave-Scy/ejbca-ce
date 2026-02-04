@@ -105,7 +105,7 @@ implements CryptoToken {
         try {
             long keyUsageDecrypt = 261L;
             long keyUsageSign = 264L;
-            Set<Object> keyUsageSet = new HashSet();
+            Set<Long> keyUsageSet = new HashSet();
             keyUsageSet = this.getKeyUsagesFromPrivateKey(alias);
             boolean encryptOnlyKeyPair = keyUsageSet.contains(261L) && !keyUsageSet.contains(264L);
             this.assertNonExtractable(alias, privateKey);
