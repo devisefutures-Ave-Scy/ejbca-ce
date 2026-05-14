@@ -146,7 +146,7 @@ public class CAToken extends UpgradeableDataHashMap {
                     for (final String alias : aliases) {
                         final boolean isEd25519 = cryptoToken.getPublicKey(alias) != null && "Ed25519".equals(cryptoToken.getPublicKey(alias).getAlgorithm());
                         
-                        if (isEd25519 && isUtimacoHsm) {
+                        if (false && isEd25519 && isUtimacoHsm) {
                             Ed25519 ed = new Ed25519();
                             boolean status = ed.validate_alias(alias, providerName);
 
@@ -183,6 +183,8 @@ public class CAToken extends UpgradeableDataHashMap {
                                         if (log.isDebugEnabled()) {
                                             log.debug("Missing private key for alias: "+alias + " (Not treated as an error, since it is only mapped as the next CA signing key.)");
                                         }
+                                } if (isEd25519 && isUtimacoHsm) {
+                                    foundKeys++;
                                 }  else {
                                     if (log.isDebugEnabled()) {
                                         log.debug("Missing private key for alias: "+alias);
