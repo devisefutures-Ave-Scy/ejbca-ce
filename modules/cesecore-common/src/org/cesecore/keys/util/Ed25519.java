@@ -125,6 +125,11 @@ public class Ed25519 {
 
 
             C.GenerateKeyPair(sessionRef.value(), new CKM(CKM.ECDSA_KEY_PAIR_GEN), pubTempl, privTempl, publicKey, privateKey);
+            
+            if (publicKey.value() == 0 || privateKey.value() == 0) {
+                throw new EJBException("Key pair generation failed: " + keyalias);
+            }
+
         } catch (CKRException rv) {
             hsmInfo.CloseSession(sessionRef);
             throw new EJBException("Failed to generate Key Pair: " + keyalias, rv);
@@ -541,6 +546,10 @@ public class Ed25519 {
             C.FindObjects(sessionRef.value(), result, objectCount);
             C.FindObjectsFinal(sessionRef.value());
 
+            if (result[0] == 0) {
+                throw new EJBException("Private key error for alias: " + alias);
+            }
+
             LongRef privKey = new LongRef(result[0]);
 
             return privKey;
@@ -643,6 +652,10 @@ public class Ed25519 {
             C.FindObjectsInit(sessionRef.value(), templ);
             C.FindObjects(sessionRef.value(), result, objectCount);
             C.FindObjectsFinal(sessionRef.value());
+
+            if (result[0] == 0) {
+                throw new EJBException("Public key error for alias: " + alias);
+            }
 
             LongRef pubKey = new LongRef(result[0]);
 
