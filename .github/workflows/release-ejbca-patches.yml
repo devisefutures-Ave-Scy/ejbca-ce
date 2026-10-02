@@ -48,13 +48,14 @@ jobs:
         env:
           APPSRV_HOME: ${{ github.workspace }}
         run: |
-          ant -f modules/build.xml cesecore-common  -q
-          ant -f modules/build.xml cesecore-x509ca  -q
-          ant -f modules/build.xml ra-gui           -q
-          ant -f modules/build.xml ejbca-ejb-cli    -q
-          ant -f modules/build.xml cesecore-ejb     -q
-          ant -f modules/build.xml ejbca-ejb        -q          
-          ant adminweb.war                          -q
+          ant build -q
+          #ant -f modules/build.xml cesecore-common  -q
+          #ant -f modules/build.xml cesecore-x509ca  -q
+          #ant -f modules/build.xml ra-gui           -q
+          #ant -f modules/build.xml ejbca-ejb-cli    -q
+          #ant -f modules/build.xml cesecore-ejb     -q
+          #ant -f modules/build.xml ejbca-ejb        -q          
+          #ant adminweb.war                          -q
 
       - name: Find ejbca-ejb-cli output
         run: find modules/dist -name "ejbca-ejb-cli*" 2>/dev/null || echo "Not found in modules/dist"          
