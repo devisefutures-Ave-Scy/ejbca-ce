@@ -368,14 +368,14 @@ public abstract class CABaseCommon extends UpgradeableDataHashMap implements CAC
         // things like a NulLCryptoToken does not have signature algorithms
         final String sigAlg = catoken.getSignatureAlgorithm();
         if (StringUtils.isNotEmpty(sigAlg)) {
-            if (!StringTools.containsCaseInsensitive(AlgorithmConstants.AVAILABLE_SIGALGS, sigAlg)) {
+            if (!"SM3withSM2".equalsIgnoreCase(sigAlg) && !StringTools.containsCaseInsensitive(AlgorithmConstants.AVAILABLE_SIGALGS, sigAlg)) {
                 final String msg = intres.getLocalizedMessage("createcert.invalidsignaturealg", sigAlg, ArrayUtils.toString(AlgorithmConstants.AVAILABLE_SIGALGS));
                 throw new InvalidAlgorithmException(msg);
             }
         }
         final String encAlg = catoken.getEncryptionAlgorithm();
         if (StringUtils.isNotEmpty(encAlg)) {
-            if (!StringTools.containsCaseInsensitive(AlgorithmConstants.AVAILABLE_SIGALGS, encAlg)) {
+            if (!"SM3withSM2".equalsIgnoreCase(encAlg) && !StringTools.containsCaseInsensitive(AlgorithmConstants.AVAILABLE_SIGALGS, encAlg)) {
                 final String msg = intres.getLocalizedMessage("createcert.invalidsignaturealg", encAlg, ArrayUtils.toString(AlgorithmConstants.AVAILABLE_SIGALGS));
                 throw new InvalidAlgorithmException(msg);
             }

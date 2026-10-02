@@ -65,6 +65,7 @@ import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.gm.GMObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.ocsp.OCSPObjectIdentifiers;
 import org.bouncycastle.asn1.ocsp.RevokedInfo;
@@ -76,6 +77,7 @@ import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.Extensions;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.KeyPurposeId;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateHolder;
@@ -2503,6 +2505,12 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
      * @return A single algorithm to use Example: SHA256WithRSA or SHA256WithECDSA
      */
     private static String getSigningAlgFromAlgSelection(final PublicKey pk) {
+        // SM2 add-on: SM2 keys always sign with SM3withSM2
+        if (isSm2Key(pk)) {
+            log.debug("Using signature algorithm for response: SM3withSM2");
+            return "SM3withSM2";
+        }
+            
         Optional<String> sigAlg = InternalKeyBindingBase.ACCEPTED_SIGNATURE_ALGORITHMS.stream()
                 .filter(signatureAlgorithm -> AlgorithmTools.isCompatibleSigAlg(pk, signatureAlgorithm)).findFirst();
         log.debug("Using signature algorithm for response: " + sigAlg.get());
@@ -2649,5 +2657,24 @@ public class OcspResponseGeneratorSessionBean implements OcspResponseGeneratorSe
         }
         return pattern.matcher(target.toString()).matches();
     }
+
+    // SM2 add-on: local copy (ejbca-ejb cannot see admin-gui classes)
+    private static boolean isSm2Key(final PublicKey pk) {
+        if (pk == null) {
+            return false;
+        }
+        if ("SM2".equalsIgnoreCase(pk.getAlgorithm())) {
+            return true;
+        }
+        try {
+            final SubjectPublicKeyInfo spki = SubjectPublicKeyInfo.getInstance(pk.getEncoded());
+            return GMObjectIdentifiers.sm2p256v1.equals(spki.getAlgorithm().getAlgorithm())
+                    || GMObjectIdentifiers.sm2p256v1.equals(spki.getAlgorithm().getParameters());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+ 
 }
 

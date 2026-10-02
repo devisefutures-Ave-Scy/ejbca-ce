@@ -112,6 +112,13 @@ public abstract class BaseInternalKeyBindingCommand extends EjbcaCliUserCommandB
             sbAlg.append(algorithm).append(',');
 
         }
+        // SM2 add-on: list SM3withSM2 only when the SM add-on is on the CLI classpath
+        try {
+            Class.forName("com.devisefutures.sm.HsmSmCryptoToken", false, BaseInternalKeyBindingCommand.class.getClassLoader());
+            sbAlg.append("SM3withSM2").append(',');
+        } catch (ClassNotFoundException | LinkageError e) {
+            // SM add-on not installed
+        }        
         return sbAlg.deleteCharAt(sbAlg.length() - 1).append('\n').toString();
     }
 }

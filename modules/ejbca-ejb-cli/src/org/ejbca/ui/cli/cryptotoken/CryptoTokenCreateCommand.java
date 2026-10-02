@@ -50,6 +50,12 @@ public class CryptoTokenCreateCommand extends EjbcaCliUserCommandBase {
 
     private static final Logger log = Logger.getLogger(CryptoTokenCreateCommand.class);
 
+    // ---- DeviseFutures add-on type names ----
+    private static final String HSM_ED25519_SIMPLE_NAME = "HsmEd25519CryptoToken";
+    private static final String HSM_ED25519_CLASS_NAME  = "com.devisefutures.ed25519.HsmEd25519CryptoToken";
+    private static final String HSM_SM_SIMPLE_NAME      = "HsmSmCryptoToken";
+    private static final String HSM_SM_CLASS_NAME       = "com.devisefutures.sm.HsmSmCryptoToken";
+
     private static final String CRYPTOTOKEN_NAME_KEY = "--token";
     private static final String PIN_KEY = "--pin";
     private static final String AUTOACTIVATE_KEY = "--autoactivate";
@@ -156,7 +162,11 @@ public class CryptoTokenCreateCommand extends EjbcaCliUserCommandBase {
         return new String[] { "cryptotoken" };
     }
 
-    /** Returns a string with a list of the available Crypto Token types, which is shown in the help text. */
+    /**
+     * Returns a string with a list of the available Crypto Token types, shown in the help text.
+     * Built-in types are always included. DeviseFutures add-on types are included only if
+     * their classes are present on the classpath (i.e. the add-on is installed).
+     */
     private String getAvailableTokenTypes() {
         final StringBuilder sb = new StringBuilder();
         sb.append(SoftCryptoToken.class.getSimpleName());
@@ -166,6 +176,9 @@ public class CryptoTokenCreateCommand extends EjbcaCliUserCommandBase {
         appendAvailableTokenType(sb, CryptoTokenFactory.AWSKMS_NAME);
         appendAvailableTokenType(sb, CryptoTokenFactory.FORTANIX_NAME);
         appendAvailableTokenType(sb, CryptoTokenFactory.SECUROSYS_NAME);
+        // DeviseFutures add-on types: listed only when the add-on JAR is on the classpath
+        appendAvailableTokenType(sb, HSM_ED25519_CLASS_NAME);
+        appendAvailableTokenType(sb, HSM_SM_CLASS_NAME);        
         return sb.toString();
     }
 
@@ -242,13 +255,18 @@ public class CryptoTokenCreateCommand extends EjbcaCliUserCommandBase {
             String keyBinding = parameters.get(AZUREVAULT_KEY_BINDING);
             cryptoTokenPropertes.setProperty(CryptoTokenConstants.KEY_VAULT_USE_KEY_BINDING, useKeyBinding == null ? "false" : useKeyBinding);
             cryptoTokenPropertes.setProperty(CryptoTokenConstants.KEY_VAULT_KEY_BINDING, keyBinding == null ? "0" : keyBinding);
-        } else if (CryptoTokenFactory.PKCS11_SIMPLE_NAME.equals(type) || CryptoTokenFactory.JACKNJI_SIMPLE_NAME.equals(type)) {
+        } else if (CryptoTokenFactory.PKCS11_SIMPLE_NAME.equals(type) || CryptoTokenFactory.JACKNJI_SIMPLE_NAME.equals(type)
+                || HSM_ED25519_SIMPLE_NAME.equals(type) || HSM_SM_SIMPLE_NAME.equals(type)) {
+            // DeviseFutures add-on tokens are PKCS#11-based and take the same parameters (lib, slot, attributes file)
             if (CryptoTokenFactory.PKCS11_SIMPLE_NAME.equals(type)) {
                 className = CryptoTokenFactory.PKCS11_NAME;
-            } else {
+            } else if (CryptoTokenFactory.JACKNJI_SIMPLE_NAME.equals(type)) {
                 className = CryptoTokenFactory.JACKNJI_NAME;
-            }
-            // Parse library file
+            } else if (HSM_ED25519_SIMPLE_NAME.equals(type)) {
+                className = HSM_ED25519_CLASS_NAME;
+            } else {
+                className = HSM_SM_CLASS_NAME;
+            }            // Parse library file
             String pkcs11LibFilename = parameters.get(PKCS11_LIB_KEY);
             if(null == pkcs11LibFilename) {
                 getLogger().info("You need to specify a PKCS#11 library file.");

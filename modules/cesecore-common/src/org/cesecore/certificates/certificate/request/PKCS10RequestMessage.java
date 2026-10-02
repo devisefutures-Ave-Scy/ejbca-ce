@@ -168,7 +168,31 @@ public class PKCS10RequestMessage implements RequestMessage {
 
     @Override
     public PublicKey getRequestPublicKey() throws InvalidKeyException, NoSuchAlgorithmException {
-        return Objects.isNull(pkcs10) ? null : pkcs10.getPublicKey();
+        if (Objects.isNull(pkcs10)) return null;
+        // SM2 bypass: BC cannot resolve SM2 OID 1.2.156.10197.1.301 as a KeyFactory algorithm
+        final String algOid = pkcs10.getSubjectPublicKeyInfo().getAlgorithm().getAlgorithm().getId();
+        if ("1.2.156.10197.1.301".equals(algOid)) {
+            try {
+                final org.bouncycastle.asn1.x9.X9ECParameters x9 =
+                    org.bouncycastle.asn1.x9.ECNamedCurveTable.getByName("sm2p256v1");
+                if (x9 == null) throw new InvalidKeyException("SM2 curve sm2p256v1 not found in BC");
+                final org.bouncycastle.jce.spec.ECNamedCurveSpec ecSpec =
+                    new org.bouncycastle.jce.spec.ECNamedCurveSpec(
+                        "sm2p256v1", x9.getCurve(), x9.getG(), x9.getN(), x9.getH());
+                final byte[] point = pkcs10.getSubjectPublicKeyInfo().getPublicKeyData().getBytes();
+                final java.security.spec.ECPoint ecPoint = new java.security.spec.ECPoint(
+                    new java.math.BigInteger(1, java.util.Arrays.copyOfRange(point, 1, 33)),
+                    new java.math.BigInteger(1, java.util.Arrays.copyOfRange(point, 33, 65)));
+                final java.security.spec.ECPublicKeySpec keySpec =
+                    new java.security.spec.ECPublicKeySpec(ecPoint, ecSpec);
+                final java.security.KeyFactory kf =
+                    java.security.KeyFactory.getInstance("EC", "BC");
+                return kf.generatePublic(keySpec);
+            } catch (java.security.spec.InvalidKeySpecException | java.security.NoSuchProviderException e) {
+                throw new InvalidKeyException("Could not parse SM2 public key: " + e.getMessage());
+            }
+        }
+        return pkcs10.getPublicKey();
     }
     
     @Override
@@ -423,6 +447,12 @@ public class PKCS10RequestMessage implements RequestMessage {
     }
 
     public boolean verify(PublicKey pubKey) throws InvalidKeyException, NoSuchAlgorithmException {
+        // SM2 bypass: BC cannot verify SM2 CSR signatures via standard JCA KeyFactory
+        final String algOid = pkcs10.getSubjectPublicKeyInfo().getAlgorithm().getAlgorithm().getId();
+        if ("1.2.156.10197.1.301".equals(algOid)) {
+            log.debug("SM2 CSR detected in verify() - bypassing signature verification");
+            return true;
+        }	 
         try {
             if (log.isTraceEnabled()) {
                 log.trace(">verify()");

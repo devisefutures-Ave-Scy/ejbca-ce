@@ -1,0 +1,109 @@
+name: Build and Release EJBCA Patches
+
+# Publishes patched EJBCA JARs/WARs used by both add-on installers.
+# Tagged with same scheme: v9.6.3_1.0.0
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v9.6.3)'
+        required: true
+      prerelease:
+        type: boolean
+        default: true
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Ant
+        run: sudo apt-get install -y ant -q
+
+      - name: Resolve version tag
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "prerelease=${{ github.event.inputs.prerelease }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build patched EJBCA modules
+        env:
+          APPSRV_HOME: ${{ github.workspace }}
+        run: |
+          ant -f modules/build.xml cesecore-common  -q
+          ant -f modules/build.xml cesecore-x509ca  -q
+          ant -f modules/build.xml ra-gui           -q
+          ant -f modules/build.xml ejbca-ejb-cli    -q
+          ant -f modules/build.xml cesecore-ejb     -q
+          ant -f modules/build.xml ejbca-ejb        -q          
+          ant adminweb.war                          -q
+
+      - name: Find ejbca-ejb-cli output
+        run: find modules/dist -name "ejbca-ejb-cli*" 2>/dev/null || echo "Not found in modules/dist"          
+
+      - name: Collect artifacts and compute SHA256
+        run: |
+          mkdir -p release-artifacts
+
+          cp modules/dist/cesecore-common.jar         release-artifacts/
+          cp modules/dist/cesecore-x509ca.jar         release-artifacts/
+          cp modules/dist/adminweb.war                release-artifacts/
+          cp modules/dist/ra-gui.war                  release-artifacts/
+          cp modules/dist/cesecore-ejb.jar            release-artifacts/
+          cp modules/dist/ejbca-ejb.jar             release-artifacts/
+          cp dist/ejbca-ejb-cli/ejbca-ejb-cli.jar     release-artifacts/
+
+          cd release-artifacts
+          for f in *; do
+            [[ "$f" == *.sha256 ]] && continue
+            sha256sum "$f" > "${f}.sha256"
+          done
+          ls -lah
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:   ${{ steps.version.outputs.tag }}
+          name:       "EJBCA Patches ${{ steps.version.outputs.tag }}"
+          prerelease: ${{ steps.version.outputs.prerelease }}
+          generate_release_notes: true
+          body: |
+            ## Patched EJBCA-CE artifacts — ${{ steps.version.outputs.tag }}
+
+            Pre-built patched JARs and WARs downloaded automatically by
+            `install-ed25519.sh` and `install-sm.sh`.
+
+            **Do not install manually** — use the add-on installers.
+
+            | File | Used by |
+            |------|---------|
+            | `adminweb.war` | Ed25519 + SM |
+            | `ra-gui.war` | SM only |
+            | `cesecore-common.jar` | SM only |
+            | `cesecore-x509ca.jar` | SM only |
+            | `ejbca-ejb.jar` | SM only |
+            | `cesecore-ejb.jar` | Ed25519 + SM |
+            | `ejbca-ejb-cli.jar` | Ed25519 + SM |
+            
+
+          files: release-artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

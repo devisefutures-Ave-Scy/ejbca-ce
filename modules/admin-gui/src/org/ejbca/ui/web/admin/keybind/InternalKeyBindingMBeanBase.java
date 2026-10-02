@@ -67,6 +67,7 @@ import org.cesecore.util.ui.DynamicUiProperty;
 import org.ejbca.core.ejb.ra.EndEntityAccessSessionLocal;
 import org.ejbca.core.model.authorization.AccessRulesConstants;
 import org.ejbca.ui.web.admin.BaseManagedBean;
+import org.ejbca.ui.web.admin.HsmAddonUtils;
 import org.ejbca.util.passgen.IPasswordGenerator;
 import org.ejbca.util.passgen.PasswordGeneratorFactory;
 
@@ -1001,9 +1002,15 @@ public abstract class InternalKeyBindingMBeanBase extends BaseManagedBean implem
             try {
                 final PublicKey currentPublicKey = getCryptoTokenManagementSession().getPublicKey(getAuthenticationToken(), currentCryptoToken.intValue(),
                         currentKeyPairAlias).getPublicKey();
-                for (final String signatureAlgorithm : AlgorithmTools.getSignatureAlgorithms(currentPublicKey)) {
-                    if (InternalKeyBindingBase.ACCEPTED_SIGNATURE_ALGORITHMS.contains(signatureAlgorithm)) {
-                        availableSignatureAlgorithms.add(new SelectItem(signatureAlgorithm));
+                // SM2 add-on: AlgorithmTools does not know SM2, offer SM3withSM2 for SM2 keys (only when the add-on is installed)
+                if (HsmAddonUtils.isAddonAvailable(HsmAddonUtils.SM_ADDON_PROBE_CLASS)
+                        && HsmAddonUtils.isSm2Key(currentPublicKey)) {
+                    availableSignatureAlgorithms.add(new SelectItem("SM3withSM2"));
+                } else {
+                    for (final String signatureAlgorithm : AlgorithmTools.getSignatureAlgorithms(currentPublicKey)) {
+                        if (InternalKeyBindingBase.ACCEPTED_SIGNATURE_ALGORITHMS.contains(signatureAlgorithm)) {
+                            availableSignatureAlgorithms.add(new SelectItem(signatureAlgorithm));
+                        }
                     }
                 }
                 // If we have a currently selected signature algorithm, but it's not one of the ones we would choose, add it so we don't hide the current selection

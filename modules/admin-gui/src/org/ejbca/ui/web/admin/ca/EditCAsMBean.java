@@ -116,6 +116,7 @@ import org.ejbca.ui.web.admin.bean.SessionBeans;
 import org.ejbca.ui.web.admin.cainterface.CAInterfaceBean;
 import org.ejbca.ui.web.admin.cainterface.CaInfoDto;
 import org.ejbca.ui.web.admin.certprof.CertProfileBean.ApprovalRequestItem;
+import org.ejbca.ui.web.admin.HsmAddonUtils;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.ejb.EJB;
@@ -1115,6 +1116,10 @@ public class EditCAsMBean extends BaseManagedBean implements Serializable {
             resultList.add(new SelectItem(current, current, ""));
         }
 
+        if (HsmAddonUtils.isAddonAvailable(HsmAddonUtils.SM_ADDON_PROBE_CLASS)) {
+            resultList.add(new SelectItem("SM3withSM2", "SM3withSM2", ""));
+        }  
+
         // There is no information to filter signing algorithms by.
         if (!StringUtils.isEmpty(cryptoTokenIdParam) && !cryptoTokenIdParam.equals(CAInterfaceBean.PLACEHOLDER_CRYPTO_TOKEN_ID + "")) {
             try {
@@ -1146,6 +1151,17 @@ public class EditCAsMBean extends BaseManagedBean implements Serializable {
      * @return true if found
      */
     private boolean getSigningAlgorithmsApplicableForCryptoToken(String signingAlgorithm, List<KeyPairInfo> cryptoTokenKeyPairInfos) {
+        // SM3withSM2 — special case: keys appear as EC/sm2p256v1 in the crypto token
+        if ("SM3withSM2".equals(signingAlgorithm)) {
+            for (final KeyPairInfo cryptoTokenKeyPairInfo : cryptoTokenKeyPairInfos) {
+                if (("EC".equals(cryptoTokenKeyPairInfo.getKeyAlgorithm())
+                        || "ECDSA".equals(cryptoTokenKeyPairInfo.getKeyAlgorithm()))
+                        && "sm2p256v1".equals(cryptoTokenKeyPairInfo.getKeySpecification())) {
+                    return true;
+                }
+            }
+            return false;
+        }        
         String requiredKeyAlgorithm = AlgorithmTools.getKeyAlgorithmFromSigAlg(signingAlgorithm);
         for (final KeyPairInfo cryptoTokenKeyPairInfo : cryptoTokenKeyPairInfos) {
             if (requiredKeyAlgorithm.equals(cryptoTokenKeyPairInfo.getKeyAlgorithm())) {

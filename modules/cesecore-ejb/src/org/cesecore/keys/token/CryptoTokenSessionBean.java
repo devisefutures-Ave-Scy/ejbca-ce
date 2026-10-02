@@ -66,7 +66,10 @@ public class CryptoTokenSessionBean implements CryptoTokenSessionLocal, CryptoTo
      */
     private static final Set<String> CE_SUPPORTED_TOKEN_TYPES = Set.of(
             SoftCryptoToken.class.getSimpleName(),
-            NullCryptoToken.class.getSimpleName()
+            NullCryptoToken.class.getSimpleName(),
+            "PKCS11CryptoToken",
+            "HsmEd25519CryptoToken",
+            "HsmSmCryptoToken"       
     );
 
     @PersistenceContext(unitName = CesecoreConfiguration.PERSISTENCE_UNIT)

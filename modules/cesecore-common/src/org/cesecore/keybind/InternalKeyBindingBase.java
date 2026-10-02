@@ -54,6 +54,11 @@ public abstract class InternalKeyBindingBase extends UpgradeableDataHashMap impl
     
     public static final Set<String> ACCEPTED_SIGNATURE_ALGORITHMS = new TreeSet<>(Arrays.asList(AlgorithmConstants.AVAILABLE_SIGALGS)).stream()
             .filter(alg -> !INSECURE_SIGNING_ALGORITHMS.contains(alg)).collect(Collectors.toCollection(TreeSet::new));
+
+    // SM3withSM2 is not in AVAILABLE_SIGALGS (x509-common-util), allow it for OCSP key bindings
+    static {
+        ACCEPTED_SIGNATURE_ALGORITHMS.add("SM3withSM2");
+    }            
     
     private int internalKeyBindingId;
     private String name;

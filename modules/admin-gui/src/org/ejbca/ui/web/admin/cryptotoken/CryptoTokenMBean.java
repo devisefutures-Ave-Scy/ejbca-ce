@@ -79,6 +79,7 @@ import org.ejbca.config.WebConfiguration;
 import org.ejbca.core.model.authorization.AccessRulesConstants;
 import org.ejbca.core.protocol.acme.eab.AcmeExternalAccountBinding;
 import org.ejbca.ui.web.admin.BaseManagedBean;
+import org.ejbca.ui.web.admin.HsmAddonUtils;
 import org.ejbca.ui.web.jsf.configuration.EjbcaJSFHelper;
 import org.ejbca.util.SlotList;
 
@@ -269,7 +270,8 @@ public class CryptoTokenMBean extends BaseManagedBean implements Serializable {
 
         public boolean isP11SlotType() {
             return CryptoTokenFactory.PKCS11_SIMPLE_NAME.equals(cryptoTokenInfo.getType()) ||
-                    CryptoTokenFactory.JACKNJI_SIMPLE_NAME.equals(cryptoTokenInfo.getType());
+                CryptoTokenFactory.JACKNJI_SIMPLE_NAME.equals(cryptoTokenInfo.getType()) ||
+                HsmAddonUtils.isHsmAddonToken(cryptoTokenInfo.getType());
         }
 
         public boolean isP11NG() {
@@ -635,7 +637,8 @@ public class CryptoTokenMBean extends BaseManagedBean implements Serializable {
 
         public boolean isShowP11CryptoToken() {
             return CryptoTokenFactory.PKCS11_SIMPLE_NAME.equals(getType()) ||
-                    CryptoTokenFactory.JACKNJI_SIMPLE_NAME.equals(getType());
+                    CryptoTokenFactory.JACKNJI_SIMPLE_NAME.equals(getType()) ||
+                    HsmAddonUtils.isHsmAddonToken(getType());
         }
 
         public boolean isShowP11NGCryptoToken() {
@@ -1324,10 +1327,19 @@ public class CryptoTokenMBean extends BaseManagedBean implements Serializable {
             final Properties properties = new Properties();
             String className = null;
             if (CryptoTokenFactory.PKCS11_SIMPLE_NAME.equals(getCurrentCryptoToken().getType()) ||
-                    CryptoTokenFactory.JACKNJI_SIMPLE_NAME.equals(getCurrentCryptoToken().getType())) {
-                className = getCurrentCryptoToken().getType().equals("PKCS11CryptoToken")
-                        ? CryptoTokenFactory.PKCS11_NAME
-                        : CryptoTokenFactory.JACKNJI_NAME;
+                    CryptoTokenFactory.JACKNJI_SIMPLE_NAME.equals(getCurrentCryptoToken().getType()) ||
+                    HsmAddonUtils.isHsmAddonToken(getCurrentCryptoToken().getType()) ) {
+
+                if (CryptoTokenFactory.PKCS11_SIMPLE_NAME.equals(getCurrentCryptoToken().getType())) {
+                    className = CryptoTokenFactory.PKCS11_NAME;
+                } else if (CryptoTokenFactory.JACKNJI_SIMPLE_NAME.equals(getCurrentCryptoToken().getType())) {
+                    className = CryptoTokenFactory.JACKNJI_NAME;
+                } else if ("HsmSmCryptoToken".equals(getCurrentCryptoToken().getType())) {
+                    className = "HsmSmCryptoToken";
+                } else {
+                    className = "HsmEd25519CryptoToken";
+                }
+
                 String library = getCurrentCryptoToken().getP11Library();
                 properties.setProperty(CryptoTokenConstants.SHLIB_LABEL_KEY, library);
                 String slotTextValue = getCurrentCryptoToken().getP11Slot().trim();
@@ -1398,22 +1410,26 @@ public class CryptoTokenMBean extends BaseManagedBean implements Serializable {
                 }
                 if (checkSlotInUse) {
                     log.info("Checking if slot is already used");
-                    List<String> usedBy = getCryptoTokenManagementSession().isCryptoTokenSlotUsed(getAuthenticationToken(), name, className, properties);
-                    if (!usedBy.isEmpty()) {
-                        final StringBuilder msg = new StringBuilder("The P11 slot is already used by other crypto token(s)");
-                        for (String cryptoTokenName : usedBy) {
-                            String usedByName = cryptoTokenName;
-                            if (NumberUtils.isCreatable(usedByName)) {
-                                // if the crypto token name is purely numeric, it is likely to be a database protection token
-                                usedByName = usedByName + " (database protection?)";
+                    // Skip slot-in-use check for HSM add-on tokens — they manage 
+                    // slot isolation via provider naming internally
+                    if (!HsmAddonUtils.isHsmAddonToken(getCurrentCryptoToken().getType())) {                    
+                        List<String> usedBy = cryptoTokenManagementSession.isCryptoTokenSlotUsed(authenticationToken, name, className, properties);
+                        if (!usedBy.isEmpty()) {
+                            final StringBuilder msg = new StringBuilder("The P11 slot is already used by other crypto token(s)");
+                            for (String cryptoTokenName : usedBy) {
+                                String usedByName = cryptoTokenName;
+                                if (NumberUtils.isNumber(usedByName)) {
+                                    // if the crypto token name is purely numeric, it is likely to be a database protection token
+                                    usedByName = usedByName + " (database protection?)";
+                                }
+                                msg.append("; ");
+                                msg.append(usedByName);
                             }
-                            msg.append("; ");
-                            msg.append(usedByName);
+                            msg.append(". Re-using P11 slots in multiple crypto tokens is discouraged, and all parameters must be identical. Re-enter authentication code and Confirm Save to continue.");
+                            p11SlotUsed = true;
+                            addNonTranslatedErrorMessage(msg.toString());
+                            return;
                         }
-                        msg.append(". Re-using P11 slots in multiple crypto tokens is discouraged, and all parameters must be identical. Re-enter authentication code and Confirm Save to continue.");
-                        p11SlotUsed = true;
-                        addNonTranslatedErrorMessage(msg.toString());
-                        return;
                     }
                 }
             } else if (SoftCryptoToken.class.getSimpleName().equals(getCurrentCryptoToken().getType())) {
@@ -1460,7 +1476,11 @@ public class CryptoTokenMBean extends BaseManagedBean implements Serializable {
                 properties.setProperty(CryptoTokenConstants.SECUROSYS_OPERATION_KEY, securosysOperationKey);
                 properties.setProperty(CryptoTokenConstants.SECUROSYS_SERVICE_KEY, securosysServiceKey);
                 properties.setProperty(CryptoTokenConstants.SECUROSYS_APPROVAL_TIMEOUT, securosysApprovalTimeout);
-            }
+            } else if ("HsmSmCryptoToken".equals(getCurrentCryptoToken().getType())) {
+                className = "HsmSmCryptoToken";
+            } else {
+                className = "HsmEd25519CryptoToken";
+            } 
             if (getCurrentCryptoToken().isAllowExportPrivateKey()) {
                 properties.setProperty(CryptoToken.ALLOW_EXTRACTABLE_PRIVATE_KEY, String.valueOf(getCurrentCryptoToken().isAllowExportPrivateKey()));
             }
@@ -1754,7 +1774,8 @@ public class CryptoTokenMBean extends BaseManagedBean implements Serializable {
                 currentCryptoToken.setAllowExplicitParameters(cryptoTokenInfo.isAllowExplicitParameters());
 
                 if (cryptoTokenInfo.getType().equals(CryptoTokenFactory.PKCS11_SIMPLE_NAME) ||
-                        cryptoTokenInfo.getType().equals(CryptoTokenFactory.JACKNJI_SIMPLE_NAME)) {
+                        cryptoTokenInfo.getType().equals(CryptoTokenFactory.JACKNJI_SIMPLE_NAME) ||
+                        HsmAddonUtils.isHsmAddonToken(cryptoTokenInfo.getType()) ) {
                     currentCryptoToken.setP11AttributeFile(cryptoTokenInfo.getP11AttributeFile());
                     currentCryptoToken.setP11Library(cryptoTokenInfo.getP11Library());
                     currentCryptoToken.setP11Slot(cryptoTokenInfo.getP11Slot());
@@ -1845,6 +1866,9 @@ public class CryptoTokenMBean extends BaseManagedBean implements Serializable {
         }
         availableKeySpecs.add(new SelectItem(AlgorithmConstants.KEYALGORITHM_ED25519, AlgorithmConstants.KEYALGORITHM_ED25519));
         availableKeySpecs.add(new SelectItem(AlgorithmConstants.KEYALGORITHM_ED448, AlgorithmConstants.KEYALGORITHM_ED448));
+        if (HsmAddonUtils.isAddonAvailable(HsmAddonUtils.SM_ADDON_PROBE_CLASS)) {
+            availableKeySpecs.add(new SelectItem("sm2p256v1", "SM2 (sm2p256v1)"));
+        }        
         if (WebConfiguration.isPQCEnabled()) {
             availableKeySpecs.add(new SelectItem(AlgorithmConstants.KEYALGORITHM_FALCON512, AlgorithmConstants.KEYALGORITHM_FALCON512));
             availableKeySpecs.add(new SelectItem(AlgorithmConstants.KEYALGORITHM_FALCON1024, AlgorithmConstants.KEYALGORITHM_FALCON1024));

@@ -1227,6 +1227,17 @@ public class CAInterfaceBean implements Serializable {
     /** @return a list of key pair aliases that can be used for signing using the supplied CA signing algorithm */
     public List<String> getAvailableCryptoTokenAliases(final List<KeyPairInfo> keyPairInfos, final String caSigningAlgorithm) {
         final List<String> aliases = new ArrayList<>();
+        // SM3withSM2 — special case: keys appear as EC/sm2p256v1 in the crypto token
+        if ("SM3withSM2".equals(caSigningAlgorithm)) {
+            for (final KeyPairInfo cryptoTokenKeyPairInfo : keyPairInfos) {
+                if (("EC".equals(cryptoTokenKeyPairInfo.getKeyAlgorithm())
+                        || "ECDSA".equals(cryptoTokenKeyPairInfo.getKeyAlgorithm()))
+                        && "sm2p256v1".equals(cryptoTokenKeyPairInfo.getKeySpecification())) {
+                    aliases.add(cryptoTokenKeyPairInfo.getAlias());
+                }
+            }
+            return aliases;
+        }
         for (final KeyPairInfo cryptoTokenKeyPairInfo : keyPairInfos) {
             if (AlgorithmTools.getKeyAlgorithmFromSigAlg(caSigningAlgorithm).equalsIgnoreCase(cryptoTokenKeyPairInfo.getKeyAlgorithm())) {
                 aliases.add(cryptoTokenKeyPairInfo.getAlias());

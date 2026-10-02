@@ -1843,10 +1843,81 @@ public class EnrollMakeNewRequestBean implements Serializable {
         }
         //Get public key algorithm from CSR and check if it's allowed in certificate profile or by PQC configuration
         try {
-            final PublicKey publicKey = certRequest.getRequestPublicKey();
+            PublicKey publicKey;
+	        try {
+		        publicKey = certRequest.getRequestPublicKey();
+            } catch (Exception e) {
+                // SM2 keys may fail standard JCA parsing - try BC directly
+                if (certRequest instanceof PKCS10RequestMessage) {
+                    try {
+                        final org.bouncycastle.pkcs.PKCS10CertificationRequest bcCsr =
+                            new org.bouncycastle.pkcs.PKCS10CertificationRequest(
+                                org.bouncycastle.util.encoders.Base64.decode(
+                                    csrValue.replace("-----BEGIN CERTIFICATE REQUEST-----", "")
+                                            .replace("-----END CERTIFICATE REQUEST-----", "")
+                                            .replaceAll("\\s", "")));
+                        final org.bouncycastle.asn1.x509.SubjectPublicKeyInfo spki =
+                            bcCsr.getSubjectPublicKeyInfo();
+                        // Try BC provider getPublicKey first
+                        publicKey = org.bouncycastle.jce.provider.BouncyCastleProvider.getPublicKey(spki);
+                        log.debug("SM2 debug - BC getPublicKey result: " + (publicKey == null ? "null" : publicKey.getClass().getName()));
+			            if (publicKey == null) {
+                            // BC KeyFactory doesn't know SM2 OID in this classloader.
+                            // Build the EC public key manually using ECNamedCurveSpec.
+                            log.debug("SM2 debug - building SM2 key manually from raw point");
+                            final org.bouncycastle.asn1.x9.X9ECParameters x9 =
+                                org.bouncycastle.asn1.x9.ECNamedCurveTable.getByName("sm2p256v1");
+                            if (x9 != null) {
+                                final org.bouncycastle.jce.spec.ECNamedCurveSpec ecSpec =
+                                    new org.bouncycastle.jce.spec.ECNamedCurveSpec(
+                                        "sm2p256v1", x9.getCurve(), x9.getG(), x9.getN(), x9.getH());
+                                // Extract raw point from SPKI bitstring: 04 || X(32) || Y(32)
+                                final byte[] spkiEncoded = spki.getPublicKeyData().getBytes();
+                                final java.security.spec.ECPoint ecPoint = new java.security.spec.ECPoint(
+                                    new java.math.BigInteger(1, java.util.Arrays.copyOfRange(spkiEncoded, 1, 33)),
+                                    new java.math.BigInteger(1, java.util.Arrays.copyOfRange(spkiEncoded, 33, 65)));
+                                final java.security.spec.ECPublicKeySpec ecKeySpec =
+                                    new java.security.spec.ECPublicKeySpec(ecPoint, ecSpec);
+                                final java.security.KeyFactory ecKf =
+                                    java.security.KeyFactory.getInstance("EC", "BC");
+                                publicKey = ecKf.generatePublic(ecKeySpec);
+                                log.debug("SM2 debug - manual EC key build: " + (publicKey == null ? "null" : publicKey.getClass().getName()));
+                            } else {
+                                throw new InvalidKeyException("SM2 curve sm2p256v1 not found in BouncyCastle");
+                            }
+                        }
+                        if (publicKey == null) throw new InvalidKeyException("Could not parse public key from CSR");
+                    } catch (java.io.IOException ioe) {
+                        log.debug("SM2 debug - IOException parsing CSR: " + ioe.getMessage());
+                        throw new InvalidKeyException("Could not parse SM2 CSR: " + ioe.getMessage());
+                    } catch (java.security.NoSuchAlgorithmException | java.security.NoSuchProviderException | java.security.spec.InvalidKeySpecException kfEx) {
+                        log.debug("SM2 debug - BC KeyFactory threw: " + kfEx.getClass().getName() + ": " + kfEx.getMessage());
+                        throw new InvalidKeyException("Could not parse SM2 key via BC KeyFactory: " + kfEx.getMessage());
+                    }
+                } else {
+                    if (e instanceof InvalidKeyException) throw (InvalidKeyException) e;
+                    throw new InvalidKeyException(e.getMessage());
+                }
+            }	 
             csrSubjectDnString = certRequest.getRequestDN();
-            final String keySpecification = AlgorithmTools.getKeySpecification(publicKey);
-            final String keyAlgorithm = AlgorithmTools.getKeyAlgorithm(publicKey);
+            String keySpecification = AlgorithmTools.getKeySpecification(publicKey);
+            String keyAlgorithm = AlgorithmTools.getKeyAlgorithm(publicKey);
+    	    // SM2 support: AlgorithmTools does not recognise SM2 curve OID 1.2.156.10197.1.301,
+            // so getKeyAlgorithm/getKeySpecification return null for SM2 keys.
+            // Detect SM2 by its curve OID bytes in the DER-encoded SubjectPublicKeyInfo.
+            if (keyAlgorithm == null || keySpecification == null) {
+                final String encodedHex = org.bouncycastle.util.encoders.Hex.toHexString(publicKey.getEncoded());
+                // SM2 curve OID 1.2.156.10197.1.301 -> DER: 06 08 2a 81 1c cf 55 01 82 2d
+                if (encodedHex.contains("2a811ccf5501822d")) {
+                    keyAlgorithm = "EC";
+                    keySpecification = "prime256v1";
+                    log.debug("SM2 CSR detected: treating as EC/prime256v1 for certificate profile validation");
+                } else {
+                    raLocaleBean.addMessageError("enroll_unknown_key_algorithm");
+                    throw new ValidatorException(new FacesMessage(raLocaleBean.getMessage("enroll_unknown_key_algorithm")));
+                }
+            }
+
             if (AlgorithmTools.isPQC(keyAlgorithm) && !WebConfiguration.isPQCEnabled()) {
                 throw new ValidatorException(new FacesMessage(raLocaleBean.getMessage("enroll_key_algorithm_is_not_available", getKeyAlgorithmMessageString(keyAlgorithm, keySpecification))));
             }
@@ -1875,11 +1946,9 @@ public class EnrollMakeNewRequestBean implements Serializable {
             sha256Fingerprint = KeyTools.getSha256Fingerprint(csrValue);
             signature = extractSignatureFromCsr(certRequest);
             certificateRequest = csrValue;
-        } catch (InvalidKeyException | NoSuchAlgorithmException e) {
+        } catch (InvalidKeyException e) {
             raLocaleBean.addMessageError("enroll_unknown_key_algorithm");
             throw new ValidatorException(new FacesMessage(raLocaleBean.getMessage("enroll_unknown_key_algorithm")));
-        } catch (NoSuchProviderException e) {
-            throw new IllegalStateException(e);
         }
     }
 
