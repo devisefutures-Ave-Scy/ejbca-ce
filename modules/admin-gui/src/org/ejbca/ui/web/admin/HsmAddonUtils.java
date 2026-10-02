@@ -6,9 +6,9 @@ import java.security.PublicKey;
 import org.bouncycastle.asn1.gm.GMObjectIdentifiers;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 
-public static final String SM_ADDON_PROBE_CLASS = "com.devisefutures.sm.HsmSmCryptoToken";
-
 public final class HsmAddonUtils {
+
+    public static final String SM_ADDON_PROBE_CLASS = "com.devisefutures.sm.HsmSmCryptoToken";
 
     private HsmAddonUtils() {}
 
