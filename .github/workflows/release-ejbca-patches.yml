@@ -70,8 +70,13 @@ jobs:
 
       - name: Check CLI manifest
         run: |
-          unzip -p dist/ejbca-ejb-cli/ejbca-ejb-cli.jar META-INF/MANIFEST.MF | tr -d '\n ' \
-            | grep -q "lib/jboss-client.jar" && echo "OK: jboss-client.jar in CLI Class-Path" \
+          echo "--- dist/ejbca-ejb-cli/lib (jboss/wildfly):"
+          ls dist/ejbca-ejb-cli/lib | grep -i -E "jboss|wildfly" || echo "(none)"
+          CP=$(unzip -p dist/ejbca-ejb-cli/ejbca-ejb-cli.jar META-INF/MANIFEST.MF | tr -d '\r\n ')
+          echo "--- Class-Path entries (jboss/wildfly):"
+          echo "$CP" | grep -o -E "lib/[^ ]*(jboss|wildfly)[^ ]*?\.jar" || true
+          echo "$CP" | grep -q "lib/jboss-client.jar" \
+            && echo "OK: jboss-client.jar in CLI Class-Path" \
             || (echo "ERROR: jboss-client.jar missing from CLI Class-Path"; exit 1)
    
 
