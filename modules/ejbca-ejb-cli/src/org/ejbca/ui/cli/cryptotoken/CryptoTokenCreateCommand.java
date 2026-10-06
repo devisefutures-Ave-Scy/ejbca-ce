@@ -52,9 +52,11 @@ public class CryptoTokenCreateCommand extends EjbcaCliUserCommandBase {
 
     // ---- DeviseFutures add-on type names ----
     private static final String HSM_ED25519_SIMPLE_NAME = "HsmEd25519CryptoToken";
-    private static final String HSM_ED25519_CLASS_NAME  = "com.devisefutures.ed25519.HsmEd25519CryptoToken";
+    //private static final String HSM_ED25519_CLASS_NAME  = "com.devisefutures.ed25519.HsmEd25519CryptoToken";
+    private static final String HSM_ED25519_CLASS_NAME  = "HsmEd25519CryptoToken";
     private static final String HSM_SM_SIMPLE_NAME      = "HsmSmCryptoToken";
-    private static final String HSM_SM_CLASS_NAME       = "com.devisefutures.sm.HsmSmCryptoToken";
+    //private static final String HSM_SM_CLASS_NAME       = "com.devisefutures.sm.HsmSmCryptoToken";
+    private static final String HSM_SM_CLASS_NAME       = "HsmSmCryptoToken";
 
     private static final String CRYPTOTOKEN_NAME_KEY = "--token";
     private static final String PIN_KEY = "--pin";
