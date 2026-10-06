@@ -44,6 +44,17 @@ jobs:
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
+      # The CLI build only adds lib/jboss-client.jar to its manifest Class-Path
+      # if the file exists at build time (appserver.home/bin/client or lib/jee-client).
+      # Without it the CLI fails at runtime with NoInitialContextException (JNDI).
+      - name: Provide jboss-client.jar for the CLI build (JNDI)
+        run: |
+          WF=39.0.1.Final     # same version as the target WildFly
+          mkdir -p lib/jee-client
+          curl -sfL -o lib/jee-client/jboss-client.jar \
+            https://repo1.maven.org/maven2/org/wildfly/wildfly-client-all/${WF}/wildfly-client-all-${WF}.jar
+          ls -l lib/jee-client/
+
       - name: Build patched EJBCA modules
         env:
           APPSRV_HOME: ${{ github.workspace }}
@@ -57,8 +68,12 @@ jobs:
           #ant -f modules/build.xml ejbca-ejb        -q          
           #ant adminweb.war                          -q
 
-      - name: Find ejbca-ejb-cli output
-        run: find modules/dist -name "ejbca-ejb-cli*" 2>/dev/null || echo "Not found in modules/dist"          
+      - name: Check CLI manifest
+        run: |
+          unzip -p dist/ejbca-ejb-cli/ejbca-ejb-cli.jar META-INF/MANIFEST.MF | tr -d '\n ' \
+            | grep -q "lib/jboss-client.jar" && echo "OK: jboss-client.jar in CLI Class-Path" \
+            || (echo "ERROR: jboss-client.jar missing from CLI Class-Path"; exit 1)
+   
 
       - name: Collect artifacts and compute SHA256
         run: |
