@@ -1,0 +1,81 @@
+# =============================================================================
+#  ejbca-install.conf  -  configuration for the EJBCA v2 installer scripts
+# =============================================================================
+#  Used by: fetch-bundle.sh, install-ejbca.sh, install-ed25519.sh,
+#           uninstall-ed25519.sh
+#
+#  Copy to e.g. /root/ejbca-install.conf, fill in EVERY value, then:
+#       chown root:root /root/ejbca-install.conf
+#       chmod 600       /root/ejbca-install.conf
+#  The scripts refuse a config that is not owned by root or is readable /
+#  writable by group or others (it contains passwords and is sourced by bash).
+#
+#  There are no defaults: every key below must have a value. A key that is
+#  empty or missing stops the script before it changes anything.
+#  Values are bash assignments: KEY="value" (no spaces around '=').
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Versions  (also used by fetch-bundle.sh to know what to download)
+# -----------------------------------------------------------------------------
+JAVA_MAJOR="21"
+WILDFLY_VERSION="39.0.1.Final"
+MARIADB_JDBC_VERSION="3.5.8"
+
+# Release tags use <generation>.<ejbca-code>.<patch>: the middle number is the
+# EJBCA version without dots (EJBCA 9.6.3 -> 2.963.x). The scripts check that
+# both tags carry the code of EJBCA_VERSION.
+#
+# EJBCA version to install (src/internal.properties: app.version.number).
+EJBCA_VERSION="9.6.3"
+# Tag of devisefutures/ejbca-hsm-ejbca-patches (EJBCA source).
+EJBCA_PATCHES_TAG="2.963.0"
+# Release tag of devisefutures/ejbca-hsm-ed25519.
+ED25519_VERSION="2.963.0"
+
+# Ubuntu packages installed from the bundle's local apt repository.
+OS_PACKAGES="openjdk-21-jdk-headless ant ant-optional mariadb-server mariadb-client unzip curl net-tools"
+
+# -----------------------------------------------------------------------------
+# Paths  (WildFly paths, user and service are fixed by WildFly's systemd unit;
+#         install-ejbca.sh checks these exact values)
+# -----------------------------------------------------------------------------
+BUNDLE_DIR="/opt/ejbca-bundle"
+EJBCA_HOME="/opt/ejbca"
+WILDFLY_HOME="/opt/wildfly"
+WILDFLY_USER="wildfly"
+WILDFLY_SERVICE="wildfly-standalone"
+
+# -----------------------------------------------------------------------------
+# Host
+# -----------------------------------------------------------------------------
+EJBCA_HOSTNAME="ca.example.org"     # CN + SAN of the TLS certificate
+DN_SUFFIX="O=Example,C=PT"          # appended to the ManagementCA, TLS and SuperAdmin DNs
+HTTP_PORT="8080"
+HTTPS_PORT="8443"
+HEAP_SIZE_MB="2048"
+
+# -----------------------------------------------------------------------------
+# Database (local MariaDB)
+# -----------------------------------------------------------------------------
+DB_ROOT_PASS=""
+DB_NAME="ejbca"
+DB_USER="ejbca"
+DB_PASS=""
+
+# -----------------------------------------------------------------------------
+# EJBCA secrets
+# -----------------------------------------------------------------------------
+# Encrypts sensitive values stored in the database (crypto token PINs, etc.).
+# Set it once, before the first install, and NEVER change it afterwards.
+# For a 7.x migration it must be the 7.x instance's value.
+PBE_ENCRYPTION_KEY=""
+KS_PASS=""            # TLS keystore password (httpsserver.password)
+TS_PASS=""            # TLS truststore password (java.trustpassword)
+SUPERADMIN_PASS=""    # superadmin.p12 password
+
+# -----------------------------------------------------------------------------
+# HSM (Utimaco) - installed by the client before running the installer
+# -----------------------------------------------------------------------------
+P11_LIB_NAME="Utimaco PKCS#11 R3"
+P11_LIB_FILE="/etc/utimaco/libcs_pkcs11_R3.so"

@@ -1,28 +1,39 @@
-name: Build and Release EJBCA Patches
+name: Build EJBCA fork and release
 
-# Publishes patched EJBCA JARs/WARs used by both add-on installers.
-# Tagged with same scheme: v9.6.3_1.0.0
+# Tags: <generation>.<ejbca-code>.<patch>  e.g. 2.963.0 = EJBCA 9.6.3, patch 0.
+# The ejbca-code (middle number) must equal app.version.number without dots.
+#
+# Every push / PR: build EJBCA against a real WildFly, check the CLI manifest,
+#                  and test the add-on plugin hook (with and without a plugin).
+# Tag (or manual run): the same checks, then a GitHub Release with the installer
+#                  scripts. No binaries: installs build EJBCA from the tag's
+#                  source archive, which GitHub generates for every tag.
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches: ['**']
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+  pull_request:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g. v9.6.3)'
+        description: 'Existing tag to release (e.g. 2.963.0)'
         required: true
       prerelease:
         type: boolean
         default: true
 
-jobs:
-  build-and-release:
-    runs-on: ubuntu-latest
+env:
+  WILDFLY_VERSION: 39.0.1.Final
 
+jobs:
+  build:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref }}
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -31,100 +42,146 @@ jobs:
           distribution: 'temurin'
 
       - name: Set up Ant
-        run: sudo apt-get install -y ant -q
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ant ant-optional
 
-      - name: Resolve version tag
+      - name: Check tag matches EJBCA version
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
+          EJBCA=$(grep '^app.version.number=' src/internal.properties | cut -d= -f2 | tr -d ' \r')
+          CODE="${TAG#v}"; CODE="${CODE#*.}"; CODE="${CODE%%.*}"
+          echo "tag=$TAG  ejbca=$EJBCA  tag-code=$CODE  ejbca-code=${EJBCA//./}"
+          [[ "$CODE" == "${EJBCA//./}" ]] || { echo "ERROR: tag $TAG does not match EJBCA $EJBCA"; exit 1; }
+
+      # A real WildFly as APPSRV_HOME, exactly like the target hosts:
+      # the CLI build then finds bin/client/jboss-client.jar by itself.
+      - name: Cache WildFly
+        id: wf-cache
+        uses: actions/cache@v4
+        with:
+          path: wildfly-${{ env.WILDFLY_VERSION }}
+          key: wildfly-${{ env.WILDFLY_VERSION }}
+
+      - name: Download WildFly
+        if: steps.wf-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o wf.zip "https://github.com/wildfly/wildfly/releases/download/${WILDFLY_VERSION}/wildfly-${WILDFLY_VERSION}.zip"
+          unzip -q wf.zip && rm wf.zip
+
+      - name: Prepare conf/ for the build
+        run: |
+          for f in database cesecore web install ejbca; do cp conf/$f.properties.sample conf/$f.properties; done
+          printf 'database.name=mysql\ndatasource.jndi-name=EjbcaDS\n' >> conf/database.properties
+
+      - name: Plugin hook test - build with a test plugin
+        env:
+          APPSRV_HOME: ${{ github.workspace }}/wildfly-${{ env.WILDFLY_VERSION }}
+        run: |
+          mkdir -p addons/ci-test /tmp/jar
+          echo "Manifest-Version: 1.0" > /tmp/jar/m.mf
+          (cd /tmp/jar && jar cfm "$GITHUB_WORKSPACE/addons/ci-test/ci-test-listener.jar" m.mf)
+          cat > addons/ci-test/plugin-build.xml <<'XML'
+          <project name="ci-test-plugin" default="build">
+            <target name="build">
+              <fail unless="ejbca.jboss-ds.xml" message="Plugin hook missing: ejbca.jboss-ds.xml not passed to plugins"/>
+              <copy file="${basedir}/ci-test-listener.jar" todir="${ejbca.gen.path}/lib"/>
+              <replace file="${ejbca.jboss-ds.xml}" token="&lt;!--@plugin-resources@--&gt;"
+                       value="&lt;resource-root path=&quot;lib/ci-test-listener.jar&quot;/&gt;&lt;!--@plugin-resources@--&gt;"/>
+            </target>
+          </project>
+          XML
+          echo "plugin.ejbca.ant.file=$GITHUB_WORKSPACE/addons/ci-test/plugin-build.xml" > conf/plugins/ci-test.properties
+          ant -q clean build
+          unzip -l dist/ejbca.ear | grep -q ' lib/ci-test-listener.jar$' || { echo "ERROR: plugin JAR not in EAR"; exit 1; }
+          unzip -p dist/ejbca.ear META-INF/jboss-deployment-structure.xml | grep -q 'lib/ci-test-listener.jar' \
+            || { echo "ERROR: plugin entry not in jboss-deployment-structure.xml"; exit 1; }
+          git diff --quiet -- src/deploy/ear/META-INF/jboss-deployment-structure.xml \
+            || { echo "ERROR: plugin modified the source tree"; exit 1; }
+          echo "OK: plugin hook works"
+
+      - name: Build without plugins (the real build)
+        env:
+          APPSRV_HOME: ${{ github.workspace }}/wildfly-${{ env.WILDFLY_VERSION }}
+        run: |
+          rm -rf addons/ci-test conf/plugins/ci-test.properties
+          ant -q clean build
+          DS=$(unzip -p dist/ejbca.ear META-INF/jboss-deployment-structure.xml)
+          for m in plugin-dependencies plugin-resources plugin-sub-deployments; do
+            echo "$DS" | grep -q "@$m@" || { echo "ERROR: marker @$m@ missing"; exit 1; }
+          done
+          ! echo "$DS" | grep -q ci-test || { echo "ERROR: test plugin leaked into the build"; exit 1; }
+          echo "OK: clean build with markers"
+
+      - name: Check CLI manifest (JNDI client)
+        run: |
+          CP=$(unzip -p dist/ejbca-ejb-cli/ejbca-ejb-cli.jar META-INF/MANIFEST.MF | tr -d '\r\n ')
+          echo "$CP" | grep -q "jboss-client.jar" \
+            && echo "OK: jboss-client.jar in CLI Class-Path" \
+            || { echo "ERROR: jboss-client.jar missing from CLI Class-Path"; exit 1; }
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref }}
+
+      - name: Resolve version
         id: version
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "prerelease=${{ github.event.inputs.prerelease }}" >> $GITHUB_OUTPUT
+            echo "tag=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=${{ github.event.inputs.prerelease }}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+          EJBCA=$(grep '^app.version.number=' src/internal.properties | cut -d= -f2 | tr -d ' \r')
+          TAG=$(grep '^tag=' "$GITHUB_OUTPUT" | cut -d= -f2)
+          echo "ejbca=$EJBCA" >> "$GITHUB_OUTPUT"
+          echo "series=${TAG%%.*}.${EJBCA//./}" >> "$GITHUB_OUTPUT"
 
-      # The CLI build only adds lib/jboss-client.jar to its manifest Class-Path
-      # if the file exists at build time (appserver.home/bin/client or lib/jee-client).
-      # Without it the CLI fails at runtime with NoInitialContextException (JNDI).
-      - name: Provide jboss-client.jar for the CLI build (JNDI)
-        run: |
-          WF=39.0.1.Final     # same version as the target WildFly
-          mkdir -p lib/jee-client
-          curl -sfL -o lib/jee-client/jboss-client.jar \
-            https://repo1.maven.org/maven2/org/wildfly/wildfly-client-all/${WF}/wildfly-client-all-${WF}.jar
-          ls -l lib/jee-client/
-
-      - name: Build patched EJBCA modules
-        env:
-          APPSRV_HOME: ${{ github.workspace }}
-        run: |
-          ant build -q
-          #ant -f modules/build.xml cesecore-common  -q
-          #ant -f modules/build.xml cesecore-x509ca  -q
-          #ant -f modules/build.xml ra-gui           -q
-          #ant -f modules/build.xml ejbca-ejb-cli    -q
-          #ant -f modules/build.xml cesecore-ejb     -q
-          #ant -f modules/build.xml ejbca-ejb        -q          
-          #ant adminweb.war                          -q
-
-      - name: Check CLI manifest
-        run: |
-          echo "--- dist/ejbca-ejb-cli/lib (jboss/wildfly):"
-          ls dist/ejbca-ejb-cli/lib | grep -i -E "jboss|wildfly" || echo "(none)"
-          CP=$(unzip -p dist/ejbca-ejb-cli/ejbca-ejb-cli.jar META-INF/MANIFEST.MF | tr -d '\r\n ')
-          echo "--- Class-Path entries (jboss/wildfly):"
-          echo "$CP" | grep -o -E "lib/[^ ]*(jboss|wildfly)[^ ]*?\.jar" || true
-          echo "$CP" | grep -q "lib/jboss-client.jar" \
-            && echo "OK: jboss-client.jar in CLI Class-Path" \
-            || (echo "ERROR: jboss-client.jar missing from CLI Class-Path"; exit 1)
-   
-
-      - name: Collect artifacts and compute SHA256
+      - name: Collect installer files and compute SHA256
         run: |
           mkdir -p release-artifacts
-
-          cp modules/dist/cesecore-common.jar         release-artifacts/
-          cp modules/dist/cesecore-x509ca.jar         release-artifacts/
-          cp modules/dist/adminweb.war                release-artifacts/
-          cp modules/dist/ra-gui.war                  release-artifacts/
-          cp modules/dist/cesecore-ejb.jar            release-artifacts/
-          cp modules/dist/ejbca-ejb.jar             release-artifacts/
-          cp dist/ejbca-ejb-cli/ejbca-ejb-cli.jar     release-artifacts/
-
-          cd release-artifacts
-          for f in *; do
-            [[ "$f" == *.sha256 ]] && continue
-            sha256sum "$f" > "${f}.sha256"
+          for f in install-ejbca.sh ejbca-install.conf.sample fetch-bundle.sh; do
+            [[ -f installer/$f ]] || { echo "ERROR: installer/$f missing"; exit 1; }
+            cp installer/$f release-artifacts/
           done
+          chmod +x release-artifacts/*.sh
+          cd release-artifacts
+          for f in *; do sha256sum "$f" > "$f.sha256"; done
           ls -lah
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name:   ${{ steps.version.outputs.tag }}
-          name:       "EJBCA Patches ${{ steps.version.outputs.tag }}"
+          name:       "EJBCA ${{ steps.version.outputs.ejbca }} (DeviseFutures) ${{ steps.version.outputs.tag }}"
           prerelease: ${{ steps.version.outputs.prerelease }}
           generate_release_notes: true
           body: |
-            ## Patched EJBCA-CE artifacts — ${{ steps.version.outputs.tag }}
+            ## EJBCA-CE ${{ steps.version.outputs.ejbca }} — DeviseFutures fork ${{ steps.version.outputs.tag }}
 
-            Pre-built patched JARs and WARs downloaded automatically by
-            `install-ed25519.sh` and `install-sm.sh`.
+            EJBCA-CE ${{ steps.version.outputs.ejbca }} with the DeviseFutures patches and the
+            add-on plugin hook. Compatible add-on releases: `${{ steps.version.outputs.series }}.x`
+            (e.g. `ejbca-hsm-ed25519` `${{ steps.version.outputs.series }}.0`).
 
-            **Do not install manually** — use the add-on installers.
+            **Install:** offline, from a bundle built with `fetch-bundle.sh`
+            (it downloads this tag's source archive). See the installation workbooks.
 
-            | File | Used by |
-            |------|---------|
-            | `adminweb.war` | Ed25519 + SM |
-            | `ra-gui.war` | SM only |
-            | `cesecore-common.jar` | SM only |
-            | `cesecore-x509ca.jar` | SM only |
-            | `ejbca-ejb.jar` | SM only |
-            | `cesecore-ejb.jar` | Ed25519 + SM |
-            | `ejbca-ejb-cli.jar` | Ed25519 + SM |
-            
+            | Asset | Purpose |
+            |-------|---------|
+            | `fetch-bundle.sh` | Builds the offline bundle on an online Ubuntu 22.04 machine |
+            | `install-ejbca.sh` | Installs EJBCA on the offline target (also inside the bundle) |
+            | `ejbca-install.conf.sample` | Config template for all installer scripts |
 
+            Each asset has a `.sha256`.
           files: release-artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
