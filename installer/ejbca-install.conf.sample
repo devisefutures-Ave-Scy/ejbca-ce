@@ -1,8 +1,8 @@
 # =============================================================================
 #  ejbca-install.conf  -  configuration for the EJBCA v2 installer scripts
 # =============================================================================
-#  Used by: fetch-bundle.sh, install-ejbca.sh, install-ed25519.sh,
-#           uninstall-ed25519.sh
+#  Used by: fetch-bundle.sh, install-ejbca.sh, and the add-on scripts in
+#           $EJBCA_HOME/addons/<name>/ (install-ed25519.sh, uninstall-ed25519.sh)
 #
 #  Copy to e.g. /root/ejbca-install.conf, fill in EVERY value, then:
 #       chown root:root /root/ejbca-install.conf
@@ -28,9 +28,12 @@ MARIADB_JDBC_VERSION="3.5.8"
 #
 # EJBCA version to install (src/internal.properties: app.version.number).
 EJBCA_VERSION="9.6.3"
-# Tag of devisefutures/ejbca-hsm-ejbca-patches (EJBCA source).
+# GitHub repository (owner/name) the EJBCA source is downloaded from by
+# fetch-bundle.sh, and its tag. The source includes the add-ons (addons/<name>/).
+# A public repository needs no token; a private one needs GITHUB_TOKEN set.
+EJBCA_REPO=""
 EJBCA_PATCHES_TAG="2.963.0"
-# Release tag of devisefutures/ejbca-hsm-ed25519.
+# Ed25519 add-on release expected inside that tag (addons/ed25519/VERSION).
 ED25519_VERSION="2.963.0"
 
 # Ubuntu packages installed from the bundle's local apt repository.
@@ -79,3 +82,6 @@ SUPERADMIN_PASS=""    # superadmin.p12 password
 # -----------------------------------------------------------------------------
 P11_LIB_NAME="Utimaco PKCS#11 R3"
 P11_LIB_FILE="/etc/utimaco/libcs_pkcs11_R3.so"
+# Utimaco library configuration. Passed to WildFly as CS_PKCS11_R3_CFG; must be
+# readable by the wildfly user, and its Logpath writable by it.
+HSM_CFG_FILE="/etc/utimaco/cs_pkcs11_R3.cfg"

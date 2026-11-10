@@ -1,0 +1,98 @@
+name: Update add-on
+
+# Pulls the release assets of an add-on (today: ed25519) into
+# addons/<name>/ of the branch you run it on, checks every .sha256, and commits.
+#
+# Run: Actions > Update add-on > Run workflow > choose YOUR BRANCH, enter the
+#      add-on release tag (e.g. 2.963.0). Then tag/release the branch as usual.
+#
+# Needs, in the repository settings (Secrets and variables > Actions):
+#   variable ED25519_RELEASE_REPO  owner/repo publishing the Ed25519 add-on releases
+#   secret   ADDON_READ_TOKEN      fine-grained token, Contents: Read-only on that
+#                                  repo only (not needed if that repo is public)
+# Only the repository where add-ons are integrated needs these; a repository
+# that only receives the pushed branch and tags does not run this workflow.
+#
+# Note: the "Run workflow" button only appears once this file is on the
+# repository's default branch. A commit made with GITHUB_TOKEN does not start
+# other workflows; the build runs when you push or tag next.
+
+on:
+  workflow_dispatch:
+    inputs:
+      addon:
+        description: 'Add-on'
+        type: choice
+        options: [ed25519]
+        default: ed25519
+      version:
+        description: 'Add-on release tag to include (e.g. 2.963.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (the selected branch)
+        uses: actions/checkout@v4
+
+      - name: Resolve add-on
+        id: addon
+        run: |
+          case "${{ github.event.inputs.addon }}" in
+            ed25519)
+              [[ -n "${{ vars.ED25519_RELEASE_REPO }}" ]] \
+                || { echo "ERROR: repository variable ED25519_RELEASE_REPO is not set"; exit 1; }
+              echo "repo=${{ vars.ED25519_RELEASE_REPO }}" >> "$GITHUB_OUTPUT"
+              echo "assets=install-ed25519.sh uninstall-ed25519.sh hsm-installer-lib.sh hsm-ed25519-provider.jar hsm-ed25519-listener.jar jna-5.18.1.jar module.xml plugin-build.xml ed25519.properties" >> "$GITHUB_OUTPUT"
+              ;;
+            *) echo "ERROR: unknown add-on"; exit 1 ;;
+          esac
+
+      - name: Check the add-on release belongs to this EJBCA
+        run: |
+          TAG="${{ github.event.inputs.version }}"
+          EJBCA=$(grep '^app.version.number=' src/internal.properties | cut -d= -f2 | tr -d ' \r')
+          CODE="${TAG#v}"; CODE="${CODE#*.}"; CODE="${CODE%%.*}"
+          [[ "$CODE" == "${EJBCA//./}" ]] \
+            || { echo "ERROR: add-on $TAG is not for EJBCA $EJBCA (expected ?.${EJBCA//./}.x)"; exit 1; }
+          echo "OK: add-on $TAG matches EJBCA $EJBCA"
+
+      - name: Download assets and verify checksums
+        env:
+          GH_TOKEN: ${{ secrets.ADDON_READ_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          DEST="addons/${{ github.event.inputs.addon }}"
+          rm -rf "$DEST.new" && mkdir -p "$DEST.new"
+          for f in ${{ steps.addon.outputs.assets }}; do
+            gh release download "${{ github.event.inputs.version }}" \
+              --repo "${{ steps.addon.outputs.repo }}" --dir "$DEST.new" \
+              --pattern "$f" --pattern "$f.sha256"
+            [[ -f "$DEST.new/$f" && -f "$DEST.new/$f.sha256" ]] \
+              || { echo "ERROR: $f or $f.sha256 missing in release"; exit 1; }
+            expected=$(awk '{print $1}' "$DEST.new/$f.sha256")
+            actual=$(sha256sum "$DEST.new/$f" | awk '{print $1}')
+            [[ "$expected" == "$actual" ]] || { echo "ERROR: checksum mismatch for $f"; exit 1; }
+            echo "OK: $f"
+          done
+          chmod +x "$DEST.new"/*.sh
+          echo "${{ github.event.inputs.version }}" > "$DEST.new/VERSION"
+          rm -rf "$DEST" && mv "$DEST.new" "$DEST"
+          ls -la "$DEST"
+
+      - name: Commit to the branch
+        run: |
+          DEST="addons/${{ github.event.inputs.addon }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A "$DEST"
+          if git diff --cached --quiet; then
+            echo "No change: $DEST already at ${{ github.event.inputs.version }}"
+            exit 0
+          fi
+          git commit -m "Add-on ${{ github.event.inputs.addon }} ${{ github.event.inputs.version }}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "Committed $DEST (${{ github.event.inputs.version }}) to ${GITHUB_REF_NAME}"

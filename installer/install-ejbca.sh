@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  install-ejbca.sh  -  EJBCA v2 (DeviseFutures EJBCA-CE fork) installer
+#  install-ejbca.sh  -  EJBCA v2 installer (patched EJBCA-CE + HSM add-ons)
 # =============================================================================
 #  Target : Ubuntu 22.04 LTS (x86_64), offline
 #  DB     : local MariaDB
@@ -8,14 +8,14 @@
 #  Ref    : https://docs.keyfactor.com/ejbca-software/latest/installation
 #
 #  USAGE
-#    sudo ./install-ejbca.sh --config FILE --mode MODE [--addon INSTALLER]... [--yes]
+#    sudo ./install-ejbca.sh --config FILE --mode MODE [--addon NAME]... [--yes]
 #
 #    --config FILE      ejbca-install.conf (see ejbca-install.conf.sample)   [required]
 #    --mode MODE        fresh            new host, new database, new ManagementCA
 #                       upgrade-from-7x  (not available in this release)     [required]
-#    --addon INSTALLER  add-on installer to run at its hook points, e.g.
-#                       /opt/ejbca-bundle/addons/ed25519/install-ed25519.sh
-#                       (repeat for several add-ons)                         [optional]
+#    --addon NAME       add-on shipped in the EJBCA source (addons/NAME/) to
+#                       install, e.g. ed25519 (repeat for several add-ons). Its
+#                       addons/NAME/install-NAME.sh runs at the hook points.  [optional]
 #    --yes              do not ask for confirmation after the plan
 #
 #  The script never uses the network. Everything comes from BUNDLE_DIR
@@ -30,12 +30,12 @@
 #     4  Packages        local apt repository + OS_PACKAGES
 #     5  Database        MariaDB: secure, create database and user
 #     6  WildFly         unpack + configure (service, datasource, TLS listeners...)
-#     7  EJBCA source    unpack the ejbca-patches tag, check version
+#     7  EJBCA source    unpack the EJBCA source tag, check version
 #     8  EJBCA conf      write conf/*.properties
-#     9  Add-ons         <addon> --mode pre-deploy           (only with --addon)
+#     9  Add-ons         addons/NAME/install-NAME.sh --mode pre-deploy  (with --addon)
 #    10  Build + deploy  ant clean deployear, wait until EJBCA is up
 #    11  Install         ant runinstall, ant deploy-keystore, reload
-#    12  Add-ons         <addon> --mode verify               (only with --addon)
+#    12  Add-ons         addons/NAME/install-NAME.sh --mode verify      (with --addon)
 #    13  Finalise        ownership, service enabled, firewall, summary
 # =============================================================================
 set -euo pipefail
@@ -53,7 +53,7 @@ REQUIRED_KEYS=(
     EJBCA_HOSTNAME DN_SUFFIX HTTP_PORT HTTPS_PORT HEAP_SIZE_MB
     DB_ROOT_PASS DB_NAME DB_USER DB_PASS
     PBE_ENCRYPTION_KEY KS_PASS TS_PASS SUPERADMIN_PASS
-    P11_LIB_NAME P11_LIB_FILE
+    P11_LIB_NAME P11_LIB_FILE HSM_CFG_FILE
 )
 
 # ---------------------------------------------------------------------------
@@ -150,9 +150,12 @@ parse_args() {
     CONFIG="$(readlink -f "$CONFIG")"
     local a
     for a in "${ADDONS[@]}"; do
-        [[ -x "$a" ]] || error "Add-on installer not found or not executable: ${a}"
+        [[ "$a" =~ ^[a-z0-9]+$ ]] || error "--addon takes an add-on name (e.g. ed25519), not a path: ${a}"
     done
 }
+
+# Installer of add-on NAME inside the unpacked EJBCA source.
+addon_installer() { echo "${EJBCA_HOME}/addons/${1}/install-${1}.sh"; }
 
 # ---------------------------------------------------------------------------
 # PHASE 1 - PLAN
@@ -161,11 +164,16 @@ phase1_plan() {
     section "=== Phase 1: Plan ==="
     load_config "$CONFIG"
 
+    # Tag scheme <generation>.<ejbca-code>.<patch>: 2.963.0 belongs to EJBCA 9.6.3.
+    local tag_code="${EJBCA_PATCHES_TAG#v}"; tag_code="${tag_code#*.}"; tag_code="${tag_code%%.*}"
+    [[ "$tag_code" == "${EJBCA_VERSION//./}" ]] \
+        || error "EJBCA_PATCHES_TAG ${EJBCA_PATCHES_TAG} is not a tag for EJBCA ${EJBCA_VERSION} (expected ?.${EJBCA_VERSION//./}.x)."
+
     WILDFLY_INSTALL_DIR="/opt/wildfly-${WILDFLY_VERSION}"
     WILDFLY_ZIP="${BUNDLE_DIR}/wildfly/wildfly-${WILDFLY_VERSION}.zip"
     MARIADB_JDBC_JAR="mariadb-java-client-${MARIADB_JDBC_VERSION}.jar"
     MARIADB_JDBC_FILE="${BUNDLE_DIR}/wildfly/${MARIADB_JDBC_JAR}"
-    EJBCA_ARCHIVE="${BUNDLE_DIR}/ejbca/ejbca-hsm-ejbca-patches-${EJBCA_PATCHES_TAG}.tar.gz"
+    EJBCA_ARCHIVE="${BUNDLE_DIR}/ejbca/ejbca-${EJBCA_PATCHES_TAG}.tar.gz"
     WILDFLY_MAJOR="${WILDFLY_VERSION%%.*}"
 
     echo ""
@@ -177,15 +185,16 @@ phase1_plan() {
     printf "  %-22s %s\n" "OS packages:"   "${OS_PACKAGES}"
     printf "  %-22s %s\n" "WildFly:"       "${WILDFLY_VERSION} -> ${WILDFLY_INSTALL_DIR} (link ${WILDFLY_HOME})"
     printf "  %-22s %s\n" "MariaDB JDBC:"  "${MARIADB_JDBC_VERSION}"
-    printf "  %-22s %s\n" "EJBCA source:"  "ejbca-hsm-ejbca-patches ${EJBCA_PATCHES_TAG} (EJBCA ${EJBCA_VERSION}) -> ${EJBCA_HOME}"
+    printf "  %-22s %s\n" "EJBCA source:"  "tag ${EJBCA_PATCHES_TAG} (EJBCA ${EJBCA_VERSION}) -> ${EJBCA_HOME}"
     printf "  %-22s %s\n" "Database:"      "${DB_NAME} (user ${DB_USER}) - must not exist yet"
     printf "  %-22s %s\n" "Hostname:"      "${EJBCA_HOSTNAME}"
     printf "  %-22s %s\n" "Ports:"         "HTTP ${HTTP_PORT} / HTTPS ${HTTPS_PORT}"
     printf "  %-22s %s\n" "HSM library:"   "${P11_LIB_FILE}"
+    printf "  %-22s %s\n" "HSM config:"    "${HSM_CFG_FILE}  (CS_PKCS11_R3_CFG for WildFly)"
     if [[ ${#ADDONS[@]} -gt 0 ]]; then
         local a
         for a in "${ADDONS[@]}"; do
-            printf "  %-22s %s\n" "Add-on:" "${a}  (pre-deploy before build, verify at the end)"
+            printf "  %-22s %s\n" "Add-on:" "${a}  ($(addon_installer "$a"): pre-deploy before build, verify at the end)"
         done
     else
         printf "  %-22s %s\n" "Add-ons:" "(none)"
@@ -227,6 +236,7 @@ phase3_preflight() {
     [[ ! -e "${WILDFLY_HOME}" ]]        || error "${WILDFLY_HOME} already exists - mode fresh needs a clean host."
     [[ ! -e "${EJBCA_HOME}" ]]          || error "${EJBCA_HOME} already exists - mode fresh needs a clean host."
     [[ -f "${P11_LIB_FILE}" ]]          || error "HSM library not found: ${P11_LIB_FILE} (install the Utimaco PKCS#11 library first)."
+    [[ -f "${HSM_CFG_FILE}" ]]          || error "HSM config not found: ${HSM_CFG_FILE} (HSM_CFG_FILE)."
     info "Pre-flight checks passed."
 }
 
@@ -336,7 +346,13 @@ WILDFLY_HOME="${WILDFLY_INSTALL_DIR}"
 JAVA_HOME="${JAVA_HOME}"
 # Must be set (even to false): launch.sh tests it and /bin/sh is dash on Ubuntu.
 WILDFLY_SYSTEMD_DEBUG="false"
+# Utimaco PKCS#11 library configuration (otherwise /etc/utimaco/cs_pkcs11_R3.cfg).
+CS_PKCS11_R3_CFG="${HSM_CFG_FILE}"
 EOF
+    # Start WildFly only after MariaDB, so EJBCA's datasource is available at boot.
+    mkdir -p "/etc/systemd/system/${WILDFLY_SERVICE}.service.d"
+    printf '[Unit]\nAfter=mariadb.service\nWants=mariadb.service\n' \
+        > "/etc/systemd/system/${WILDFLY_SERVICE}.service.d/10-mariadb.conf"
     # launch.sh uses '==' inside [ ] (a bashism); Ubuntu's /bin/sh (dash) needs '='.
     local launch_sh="${WILDFLY_HOME}/bin/systemd/launch.sh"
     [[ -f "$launch_sh" ]] || error "${launch_sh} not found - unsupported WildFly layout."
@@ -345,6 +361,17 @@ EOF
     systemctl daemon-reload
     id "${WILDFLY_USER}" &>/dev/null || useradd -r -s /bin/false "${WILDFLY_USER}"
     chown -R "${WILDFLY_USER}:${WILDFLY_USER}" "${WILDFLY_INSTALL_DIR}/"
+
+    # The HSM library runs inside WildFly, as the wildfly user.
+    sudo -u "${WILDFLY_USER}" test -r "${P11_LIB_FILE}" \
+        || error "${P11_LIB_FILE} is not readable by ${WILDFLY_USER}."
+    sudo -u "${WILDFLY_USER}" test -r "${HSM_CFG_FILE}" \
+        || error "${HSM_CFG_FILE} is not readable by ${WILDFLY_USER}."
+    local hsm_logpath
+    hsm_logpath=$(sed -n 's/^[[:space:]]*Logpath[[:space:]]*=[[:space:]]*//Ip' "${HSM_CFG_FILE}" | head -1 | tr -d ' \r"')
+    if [[ -n "$hsm_logpath" ]] && ! sudo -u "${WILDFLY_USER}" test -w "$hsm_logpath"; then
+        warn "HSM Logpath ${hsm_logpath} is not writable by ${WILDFLY_USER}; the HSM library may fail to initialise."
+    fi
 
     systemctl start "${WILDFLY_SERVICE}"
     wait_for_wildfly
@@ -494,8 +521,15 @@ phase7_ejbca_source() {
     if grep -q 'ejbca.jboss-ds.xml' "${EJBCA_HOME}/build.xml"; then
         info "Add-on plugin hook present in build.xml."
     elif [[ ${#ADDONS[@]} -gt 0 ]]; then
-        error "build.xml has no add-on plugin hook - this is not a DeviseFutures fork tag with the hook, add-ons cannot be built in."
+        error "build.xml has no add-on plugin hook - this EJBCA source cannot build add-ons in."
     fi
+
+    local a inst
+    for a in "${ADDONS[@]}"; do
+        inst="$(addon_installer "$a")"
+        [[ -x "$inst" ]] || error "Add-on '${a}' is not in this EJBCA source (${inst} missing)."
+        info "Add-on ${a} $(cat "${EJBCA_HOME}/addons/${a}/VERSION" 2>/dev/null || echo '(no VERSION file)') present."
+    done
 }
 
 # ---------------------------------------------------------------------------
@@ -574,9 +608,11 @@ EOF
 run_addons() {
     local mode="$1" a
     [[ ${#ADDONS[@]} -gt 0 ]] || { info "No add-ons requested."; return 0; }
+    local inst
     for a in "${ADDONS[@]}"; do
-        info "Running: ${a} --config ${CONFIG} --mode ${mode} --yes"
-        "$a" --config "${CONFIG}" --mode "${mode}" --yes \
+        inst="$(addon_installer "$a")"
+        info "Running: ${inst} --config ${CONFIG} --mode ${mode} --yes"
+        "$inst" --config "${CONFIG}" --mode "${mode}" --yes \
             || error "Add-on ${a} failed in mode ${mode}."
     done
 }

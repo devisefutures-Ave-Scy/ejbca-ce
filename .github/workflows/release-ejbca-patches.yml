@@ -8,8 +8,12 @@ name: Build EJBCA fork and release
 # Tag push: the same checks, then a GitHub Release with the installer scripts.
 # Manual run (Actions > Run workflow, choose branch, enter e.g. 2.963.0): the same
 #                  checks on that branch; only if they pass, the tag is created on
-#                  the built commit together with the release. No binaries: installs build EJBCA from the tag's
-#                  source archive, which GitHub generates for every tag.
+#                  the built commit together with the release.
+#
+# The add-ons are part of the source (addons/<name>/, pulled from their
+# releases by the "Update add-on" workflow). Each one is checked against this
+# EJBCA version and test-built into the EAR. Installs build EJBCA from the
+# tag's source archive, which GitHub generates for every tag.
 
 on:
   push:
@@ -52,6 +56,25 @@ jobs:
           CODE="${TAG#v}"; CODE="${CODE#*.}"; CODE="${CODE%%.*}"
           echo "tag=$TAG  ejbca=$EJBCA  tag-code=$CODE  ejbca-code=${EJBCA//./}"
           [[ "$CODE" == "${EJBCA//./}" ]] || { echo "ERROR: tag $TAG does not match EJBCA $EJBCA"; exit 1; }
+
+      - name: Check shipped add-ons
+        run: |
+          EJBCA=$(grep '^app.version.number=' src/internal.properties | cut -d= -f2 | tr -d ' \r')
+          found=0
+          for d in addons/*/; do
+            [[ -f "$d/VERSION" ]] || continue
+            found=1
+            V=$(tr -d ' \r\n' < "$d/VERSION")
+            CODE="${V#v}"; CODE="${CODE#*.}"; CODE="${CODE%%.*}"
+            [[ "$CODE" == "${EJBCA//./}" ]] || { echo "ERROR: $d is release $V, not for EJBCA $EJBCA"; exit 1; }
+            for s in "$d"/*.sha256; do
+              f="${s%.sha256}"
+              [[ "$(awk '{print $1}' "$s")" == "$(sha256sum "$f" | awk '{print $1}')" ]] \
+                || { echo "ERROR: checksum mismatch for $f"; exit 1; }
+            done
+            echo "OK: $d release $V, checksums verified"
+          done
+          [[ $found -eq 1 ]] || echo "WARN: no add-on in addons/ (run the 'Update add-on' workflow)"
 
       # A real WildFly as APPSRV_HOME, exactly like the target hosts:
       # the CLI build then finds bin/client/jboss-client.jar by itself.
@@ -99,17 +122,33 @@ jobs:
             || { echo "ERROR: plugin modified the source tree"; exit 1; }
           echo "OK: plugin hook works"
 
-      - name: Build without plugins (the real build)
+      - name: Build with the shipped Ed25519 add-on
+        if: hashFiles('addons/ed25519/VERSION') != ''
         env:
           APPSRV_HOME: ${{ github.workspace }}/wildfly-${{ env.WILDFLY_VERSION }}
         run: |
           rm -rf addons/ci-test conf/plugins/ci-test.properties
+          sed "s#@EJBCA_HOME@#$GITHUB_WORKSPACE#g" addons/ed25519/ed25519.properties > conf/plugins/ed25519.properties
+          ant -q clean build
+          unzip -l dist/ejbca.ear | awk '{print $4}' | grep -qx 'hsm-ed25519-listener.jar' || { echo "ERROR: listener not at EAR root"; exit 1; }
+          unzip -l dist/ejbca.ear | awk '{print $4}' | grep -qx 'lib/hsm-ed25519-listener.jar' || { echo "ERROR: listener not in EAR lib/"; exit 1; }
+          unzip -p dist/ejbca.ear META-INF/application.xml | grep -q '<ejb>hsm-ed25519-listener.jar</ejb>' || { echo "ERROR: application.xml entry missing"; exit 1; }
+          unzip -p dist/ejbca.ear META-INF/jboss-deployment-structure.xml | grep -q 'module name="com.devisefutures.ed25519"' || { echo "ERROR: jboss-deployment-structure.xml entry missing"; exit 1; }
+          rm -f conf/plugins/ed25519.properties
+          git status --porcelain -- addons src | grep . && { echo "ERROR: the build modified the source tree"; exit 1; } || true
+          echo "OK: Ed25519 add-on builds into the EAR"
+
+      - name: Build without plugins (the real build)
+        env:
+          APPSRV_HOME: ${{ github.workspace }}/wildfly-${{ env.WILDFLY_VERSION }}
+        run: |
+          rm -rf addons/ci-test conf/plugins/ci-test.properties conf/plugins/ed25519.properties
           ant -q clean build
           DS=$(unzip -p dist/ejbca.ear META-INF/jboss-deployment-structure.xml)
           for m in plugin-dependencies plugin-resources plugin-sub-deployments; do
             echo "$DS" | grep -q "@$m@" || { echo "ERROR: marker @$m@ missing"; exit 1; }
           done
-          ! echo "$DS" | grep -q ci-test || { echo "ERROR: test plugin leaked into the build"; exit 1; }
+          ! echo "$DS" | grep -qE 'ci-test|hsm-ed25519' || { echo "ERROR: a plugin leaked into the build"; exit 1; }
           echo "OK: clean build with markers"
 
       - name: Check CLI manifest (JNDI client)
@@ -144,10 +183,12 @@ jobs:
           echo "ejbca=$EJBCA" >> "$GITHUB_OUTPUT"
           echo "series=${TAG%%.*}.${EJBCA//./}" >> "$GITHUB_OUTPUT"
 
+      # Only the two files needed BEFORE a bundle exists (offline or online).
+      # install-ejbca.sh is not an asset: it is always inside the bundle.
       - name: Collect installer files and compute SHA256
         run: |
           mkdir -p release-artifacts
-          for f in install-ejbca.sh ejbca-install.conf.sample fetch-bundle.sh; do
+          for f in fetch-bundle.sh ejbca-install.conf.sample; do
             [[ -f installer/$f ]] || { echo "ERROR: installer/$f missing"; exit 1; }
             cp installer/$f release-artifacts/
           done
@@ -161,23 +202,25 @@ jobs:
         with:
           tag_name:         ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name:       "EJBCA ${{ steps.version.outputs.ejbca }} (DeviseFutures) ${{ steps.version.outputs.tag }}"
+          name:       "EJBCA ${{ steps.version.outputs.ejbca }} ${{ steps.version.outputs.tag }}"
           prerelease: ${{ steps.version.outputs.prerelease }}
           generate_release_notes: true
           body: |
-            ## EJBCA-CE ${{ steps.version.outputs.ejbca }} — DeviseFutures fork ${{ steps.version.outputs.tag }}
+            ## EJBCA-CE ${{ steps.version.outputs.ejbca }} with HSM add-ons — ${{ steps.version.outputs.tag }}
 
-            EJBCA-CE ${{ steps.version.outputs.ejbca }} with the DeviseFutures patches and the
-            add-on plugin hook. Compatible add-on releases: `${{ steps.version.outputs.series }}.x`
-            (e.g. `ejbca-hsm-ed25519` `${{ steps.version.outputs.series }}.0`).
+            EJBCA-CE ${{ steps.version.outputs.ejbca }} with patches for HSM add-ons, the
+            add-on plugin hook and the add-ons in `addons/` (versions in `addons/*/VERSION`).
+            An add-on is only built in when installed (`install-ejbca.sh --addon <name>`).
 
-            **Install:** offline, from a bundle built with `fetch-bundle.sh`
-            (it downloads this tag's source archive). See the installation workbooks.
+            **Install:** download the two assets below, fill in the config, and run
+            `fetch-bundle.sh` (on an online Ubuntu 22.04 machine for an offline install,
+            or on the target itself for an online install). It downloads this tag's
+            source archive, add-ons included; `install-ejbca.sh` comes inside the bundle.
+            See the installation workbooks.
 
             | Asset | Purpose |
             |-------|---------|
-            | `fetch-bundle.sh` | Builds the offline bundle on an online Ubuntu 22.04 machine |
-            | `install-ejbca.sh` | Installs EJBCA on the offline target (also inside the bundle) |
+            | `fetch-bundle.sh` | Builds the installation bundle |
             | `ejbca-install.conf.sample` | Config template for all installer scripts |
 
             Each asset has a `.sha256`.

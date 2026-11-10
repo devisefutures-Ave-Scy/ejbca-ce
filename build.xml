@@ -270,7 +270,7 @@
 			<property name="ejbca.gen.path"   value="${ejbca.plugin.gen.path}"/>
 			<property name="ejbca.tmp.path"   value="${ejbca.plugin.tmp.path}"/>
 			<property name="ejbca.home"       value="${ejbca.home}"/>
-			<!-- plugins may add entries to jboss-deployment-structure.xml -->
+			<!-- Add-on plugin hook: plugins may add entries to jboss-deployment-structure.xml -->
 			<property name="ejbca.jboss-ds.xml" value="${eardd.src}/META-INF/jboss-deployment-structure.xml"/>
 		</ant>
 	</target>
@@ -288,7 +288,7 @@
 			<property name="ejbca.gen.path"   value="${ejbca.plugin.gen.path}"/>
 			<property name="ejbca.tmp.path"   value="${ejbca.plugin.tmp.path}"/>
 			<property name="ejbca.home"       value="${ejbca.home}"/>
-			<!-- DeviseFutures: plugins may add entries to jboss-deployment-structure.xml -->
+			<!-- Add-on plugin hook: plugins may add entries to jboss-deployment-structure.xml -->
 			<property name="ejbca.jboss-ds.xml" value="${eardd.src}/META-INF/jboss-deployment-structure.xml"/>
 		</ant>
 	</target>
@@ -502,7 +502,7 @@
 		<condition property="bundle-xerces-exclude" value="xerces*.jar" else="">
 			<isset property="exclude-xerces"/>
 		</condition>
-		<!-- work on a fresh copy of jboss-deployment-structure.xml in every build,
+		<!-- Add-on plugin hook: work on a fresh copy of jboss-deployment-structure.xml in every build,
 		     so plugins can add their entries (see ejbca.jboss-ds.xml) without touching the source tree. -->
 		<copy todir="${eardd.src}/META-INF" file="src/deploy/ear/META-INF/jboss-deployment-structure.xml" overwrite="true" flatten="true" failonerror="true"/>
 		<!-- Remove possible "leftovers" from previous plugin runs! -->
