@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    WildFly named module for the HSM Ed25519 JCA provider add-on.
+
+    Deployed to:
+      $WILDFLY_HOME/modules/com/devisefutures/ed25519/main/
+
+    Files required alongside this module.xml:
+      - hsm-ed25519-provider.jar  (JCA provider: HsmProvider, wrappers, PKCS#11)
+      - jna-5.18.1.jar            (JNA native bridge)
+
+    hsm-ed25519-listener.jar runs in the EAR classloader (ejbca.ear/lib/)
+    and is NOT listed here.
+
+    Coexistence: the SM add-on uses module "com.devisefutures.sm" in a
+    separate directory. Both modules can be installed simultaneously.
+-->
+<module name="com.devisefutures.ed25519" xmlns="urn:jboss:module:1.9">
+    <resources>
+        <resource-root path="hsm-ed25519-provider.jar"/>
+        <resource-root path="jna-5.18.1.jar"/>
+    </resources>
+    <dependencies>
+        <module name="java.security.jgss" export="true"/>
+        <module name="jdk.unsupported"    export="true"/>
+        <module name="java.logging"       export="true"/>
+    </dependencies>
+</module>
