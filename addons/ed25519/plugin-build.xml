@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  HSM Ed25519 add-on - EJBCA build plugin
+  ======================================
+  Run automatically by EJBCA's "ant build"/"ant deployear" through
+  conf/plugins/ed25519.properties (plugin.ejbca.ant.file points here).
+
+  EJBCA passes:
+    ejbca.gen.path      files written here are packaged into the EAR
+                        (EJB modules at the root, libraries under lib/)
+    ejbca.app.xml       the application.xml being built
+    ejbca.jboss-ds.xml  the jboss-deployment-structure.xml being built
+                        (EJBCA source with the add-on plugin hook - stock EJBCA does not pass it)
+
+  Both descriptors are fresh copies made in every build, so this plugin
+  never edits the EJBCA source tree and is safe to run on every rebuild.
+-->
+<project name="hsm-ed25519-plugin" default="build" basedir=".">
+
+    <property name="addon.listener.jar" value="hsm-ed25519-listener.jar"/>
+    <property name="addon.module"       value="com.devisefutures.ed25519"/>
+
+    <target name="check">
+        <fail message="ejbca.gen.path not set - this file must be run by the EJBCA build, not directly." unless="ejbca.gen.path"/>
+        <fail message="ejbca.app.xml not set - this file must be run by the EJBCA build, not directly." unless="ejbca.app.xml"/>
+        <fail message="ejbca.jboss-ds.xml not set - the EJBCA source has no add-on plugin hook." unless="ejbca.jboss-ds.xml"/>
+        <fail message="${addon.listener.jar} not found next to plugin-build.xml (${basedir}).">
+            <condition><not><available file="${basedir}/${addon.listener.jar}"/></not></condition>
+        </fail>
+        <fail message="Marker @plugin-dependencies@ missing in ${ejbca.jboss-ds.xml} - wrong EJBCA source.">
+            <condition><not><resourcecontains resource="${ejbca.jboss-ds.xml}" substring="@plugin-dependencies@"/></not></condition>
+        </fail>
+        <fail message="Marker @plugin-resources@ missing in ${ejbca.jboss-ds.xml} - wrong EJBCA source.">
+            <condition><not><resourcecontains resource="${ejbca.jboss-ds.xml}" substring="@plugin-resources@"/></not></condition>
+        </fail>
+        <fail message="Marker @plugin-sub-deployments@ missing in ${ejbca.jboss-ds.xml} - wrong EJBCA source.">
+            <condition><not><resourcecontains resource="${ejbca.jboss-ds.xml}" substring="@plugin-sub-deployments@"/></not></condition>
+        </fail>
+    </target>
+
+    <target name="build" depends="check">
+        <echo message="HSM Ed25519 plugin: adding ${addon.listener.jar} and module ${addon.module} to the EAR"/>
+
+        <!-- 1. Listener JAR: EAR root (EJB module, scanned by WildFly) and lib/ (class visibility) -->
+        <copy file="${basedir}/${addon.listener.jar}" todir="${ejbca.gen.path}" overwrite="true"/>
+        <copy file="${basedir}/${addon.listener.jar}" todir="${ejbca.gen.path}/lib" overwrite="true"/>
+
+        <!-- 2. application.xml: declare the listener as an EJB module -->
+        <replace file="${ejbca.app.xml}" token="&lt;/application&gt;"
+                 value="    &lt;module&gt;&lt;ejb&gt;${addon.listener.jar}&lt;/ejb&gt;&lt;/module&gt;${line.separator}&lt;/application&gt;"/>
+
+        <!-- 3. jboss-deployment-structure.xml: each entry is inserted before its marker,
+                so the marker stays and other plugins (e.g. the SM add-on) can add theirs -->
+        <replace file="${ejbca.jboss-ds.xml}" token="&lt;!--@plugin-dependencies@--&gt;"
+                 value="&lt;module name=&quot;${addon.module}&quot; services=&quot;import&quot;/&gt;${line.separator}            &lt;!--@plugin-dependencies@--&gt;"/>
+        <replace file="${ejbca.jboss-ds.xml}" token="&lt;!--@plugin-resources@--&gt;"
+                 value="&lt;resource-root path=&quot;lib/${addon.listener.jar}&quot;/&gt;${line.separator}            &lt;!--@plugin-resources@--&gt;"/>
+        <replace file="${ejbca.jboss-ds.xml}" token="&lt;!--@plugin-sub-deployments@--&gt;"
+                 value="&lt;sub-deployment name=&quot;${addon.listener.jar}&quot;&gt;${line.separator}        &lt;dependencies&gt;${line.separator}            &lt;module name=&quot;${addon.module}&quot; services=&quot;import&quot;/&gt;${line.separator}        &lt;/dependencies&gt;${line.separator}    &lt;/sub-deployment&gt;${line.separator}    &lt;!--@plugin-sub-deployments@--&gt;"/>
+
+        <!-- 4. Sanity check: the entry must now be present -->
+        <fail message="application.xml was not updated with ${addon.listener.jar}">
+            <condition><not><resourcecontains resource="${ejbca.app.xml}" substring="&lt;ejb&gt;${addon.listener.jar}&lt;/ejb&gt;"/></not></condition>
+        </fail>
+        <echo message="HSM Ed25519 plugin: done"/>
+    </target>
+</project>
