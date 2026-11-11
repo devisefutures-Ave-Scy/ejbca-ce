@@ -164,6 +164,13 @@ phase1_plan() {
     section "=== Phase 1: Plan ==="
     load_config "$CONFIG"
 
+    # keytool (used by ant runinstall / deploy-keystore) refuses passwords under 6 characters.
+    local k
+    for k in KS_PASS TS_PASS; do
+        local v="${!k}"
+        [[ ${#v} -ge 6 ]] || error "${k} must be at least 6 characters (keytool requirement)."
+    done
+
     # Tag scheme <generation>.<ejbca-code>.<patch>: 2.963.0 belongs to EJBCA 9.6.3.
     local tag_code="${EJBCA_PATCHES_TAG#v}"; tag_code="${tag_code#*.}"; tag_code="${tag_code%%.*}"
     [[ "$tag_code" == "${EJBCA_VERSION//./}" ]] \
@@ -640,10 +647,13 @@ phase10_build_deploy() {
     while curl -s --max-time 2 "$(health_url)" 2>/dev/null | grep -q "^ALLOK"; do
         sleep 3; i=$((i+3)); [[ $i -ge 60 ]] && break
     done
-    local j=0
+    local j=0 failed="${WILDFLY_HOME}/standalone/deployments/ejbca.ear.failed"
     until curl -s --max-time 3 "$(health_url)" 2>/dev/null | grep -q "^ALLOK"; do
+        if [[ -f "$failed" ]]; then
+            error "EJBCA deployment failed:\n$(head -c 2000 "$failed")\nCheck: ${WILDFLY_HOME}/standalone/log/server.log"
+        fi
         sleep 5; j=$((j+5))
-        [[ $j -ge 300 ]] && error "EJBCA health endpoint not ALLOK after 300s. Check: ${WILDFLY_HOME}/standalone/log/server.log"
+        [[ $j -ge 300 ]] && error "EJBCA health endpoint not ALLOK after ${j}s. Check: ${WILDFLY_HOME}/standalone/log/server.log"
         info "  Still initialising... (${j}s)"
     done
     local k=0
