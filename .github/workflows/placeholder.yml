@@ -1,0 +1,8 @@
+name: Placeholder
+# Only here so GitHub Actions can be enabled in this fork. Never runs by itself.
+on: workflow_dispatch
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "nothing to do"
